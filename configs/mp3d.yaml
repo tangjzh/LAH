@@ -13,8 +13,10 @@ pretrained:
 # model config: 
 model: LaHT-B/2
 num_frames: 18
-video_length: 18
 image_size: 256 # choices=[256, 512]
+patch_size: 2
+num_layer: 4
+num_attention_heads: 16
 num_sampling_steps: 250
 frame_interval: 3
 fixed_spatial: False

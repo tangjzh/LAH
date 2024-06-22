@@ -9,8 +9,8 @@ def get_dataset(args):
     if args.dataset == 'mp3d':
         transform_mp3d = transforms.Compose([
             transforms.ToTensor(),
-            transforms.CenterCrop(args.image_size),
             transforms.Resize(args.image_size),
+            transforms.CenterCrop(args.image_size),
             transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)
         ])
         return MP3DDataset(args, transform=transform_mp3d)
