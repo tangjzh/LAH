@@ -86,12 +86,10 @@ class MP3DDataset(data.Dataset):
                 pose = np.loadtxt(pose_file).reshape(4, 4)
                 if reference_pose is None:
                     reference_pose = pose
-                    reference_R = reference_pose[:3, :3]
-                    reference_T = reference_pose[:3, 3]
                     transformed_pose = np.hstack((np.eye(3), np.zeros((3, 1))))
                     transformed_pose = np.vstack((transformed_pose, [0, 0, 0, 1]))
                 else:
-                    transformed_pose = transform_pose(reference_R, reference_T, pose)
+                    transformed_pose = transform_pose(reference_pose, pose)
                 
                 pose = transformed_pose[:-1, :].flatten()
                 poses.append(torch.tensor(pose, dtype=torch.float32))

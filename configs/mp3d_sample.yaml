@@ -1,0 +1,39 @@
+# path:
+ckpt: # will be overwrite
+save_img_path: "./sample_videos/" # will be overwrite
+data: # will be overwrite
+masked: [3, 5, 7, 9, 11, 13, 15]
+pretrained_model_path: "checkpoints/Latte/"
+text_encoder: "google/flan-t5-base"
+vae: "stabilityai/sd-vae-ft-ema"
+
+# model config: 
+model: LaHT-B/2
+num_frames: 18
+image_size: 256 # choices=[256, 512]
+patch_size: 2
+num_layer: 3
+num_attention_heads: 16
+frame_interval: 3
+fixed_spatial: False
+attention_bias: True
+learn_sigma: True
+extras: 78 # [1, 2] 1 unconditional generation, 2 class-conditional generation
+num_classes:
+
+# model speedup
+use_compile: False
+use_fp16: True
+
+# sample config:
+seed:
+sample_method: 'ddpm'
+num_sampling_steps: 250
+cfg_scale: 1.0
+run_time: 12
+num_sample: 1
+negative_name:
+
+# ddp sample config
+per_proc_batch_size: 1
+num_fvd_samples: 2

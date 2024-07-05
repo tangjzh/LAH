@@ -5,3 +5,4 @@ data/
 __pycache__/
 results/
 data
+*.mp4

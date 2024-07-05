@@ -1,14 +1,14 @@
 import numpy as np
 import torch
+import matplotlib.pyplot as plt
 
-
-def create_camera_to_world_matrix(elevation, azimuth):
+def create_camera_to_world_matrix(elevation, azimuth, face_target=True):
     elevation = np.radians(elevation)
     azimuth = np.radians(azimuth)
     # Convert elevation and azimuth angles to Cartesian coordinates on a unit sphere
     x = np.cos(elevation) * np.sin(azimuth)
-    y = np.sin(elevation)
-    z = np.cos(elevation) * np.cos(azimuth)
+    z = np.sin(elevation)
+    y = np.cos(elevation) * np.cos(azimuth)
     
     # Calculate camera position, target, and up vectors
     camera_pos = np.array([x, y, z])
@@ -16,14 +16,15 @@ def create_camera_to_world_matrix(elevation, azimuth):
     up = np.array([0, 1, 0])
     
     # Construct view matrix
-    forward = target - camera_pos
+    forward = target - camera_pos if face_target else camera_pos - target
     forward /= np.linalg.norm(forward)
     right = np.cross(forward, up)
     right /= np.linalg.norm(right)
     new_up = np.cross(right, forward)
     new_up /= np.linalg.norm(new_up)
     cam2world = np.eye(4)
-    cam2world[:3, :3] = np.array([right, new_up, -forward]).T
+    forward = -forward if face_target else forward
+    cam2world[:3, :3] = np.array([right, new_up, forward]).T
     cam2world[:3, 3] = camera_pos
     return cam2world
 
@@ -67,7 +68,9 @@ def get_camera(num_frames, elevation=15, azimuth_start=0, azimuth_span=360, blen
         cameras.append(camera_matrix.flatten())
     return torch.tensor(np.stack(cameras, 0)).float()
 
-def transform_pose(reference_R, reference_T, pose):
+def transform_pose(reference_pose, pose):
+    reference_R = reference_pose[:3, :3]
+    reference_T = reference_pose[:3, 3]
     R = pose[:3, :3]
     T = pose[:3, 3]
     transformed_R = np.dot(reference_R.T, R)
@@ -75,3 +78,40 @@ def transform_pose(reference_R, reference_T, pose):
     transformed_pose = np.hstack((transformed_R, transformed_T[:, np.newaxis]))
     transformed_pose = np.vstack((transformed_pose, [0, 0, 0, 1]))
     return transformed_pose
+
+def generate_poses(angles, elevations, anchor=None):
+    poses = []
+    
+    # Generate poses for different elevations
+    for elevation in elevations:
+        for azimuth in angles:
+            pose = create_camera_to_world_matrix(elevation, azimuth, False)
+            poses.append(pose)
+
+    if anchor is None:
+        return poses
+        
+    # Use one of the level poses as the reference camera_matrix
+    reference_pose = poses[anchor]
+    
+    # Adjust all poses based on the reference
+    adjusted_poses = np.stack([transform_pose(reference_pose, pose) for pose in poses])
+    
+    return adjusted_poses
+
+def visualize_poses(poses):
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(0, 0, 0, color='r', s=100, label='Target Point')
+    for i, pose in enumerate(poses):
+        camera_pos = pose[:3, 3]
+        forward = pose[:3, 2]  # Forward vector is the third column
+        ax.scatter(camera_pos[0], camera_pos[1], camera_pos[2], label=f'Pose {i+1}')
+        ax.text(camera_pos[0], camera_pos[1], camera_pos[2], f'{i+1}', color='blue')
+        ax.quiver(camera_pos[0], camera_pos[1], camera_pos[2], 
+                  forward[0], forward[1], forward[2], length=0.1, color='k')
+    ax.set_xlabel('X axis')
+    ax.set_ylabel('Y axis')
+    ax.set_zlabel('Z axis')
+    # ax.legend()
+    plt.show()
