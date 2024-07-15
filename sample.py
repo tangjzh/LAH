@@ -27,6 +27,7 @@ from torchvision import transforms
 from omegaconf import OmegaConf
 from PIL import Image
 import numpy as np
+from utils import visualize_frames
 
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True

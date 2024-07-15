@@ -159,13 +159,13 @@ class CameraEmbedder(nn.Module):
         Forward pass to embed camera intrinsics and extrinsics.
         
         :param cam_param: Tensor of shape (N, M, extrinsics_dim).
-        :return: Tensor of shape (N * M, num_patches, embed_dim) representing the embedded camera parameters.
+        :return: Tensor of shape (N * num_patches, M, embed_dim) representing the embedded camera parameters.
         """
         # Pass through the linear layer and activation function
         embedding = self.activation(self.fc(cam_matrix))
         if num_patches is not None:
-            embedding = embedding.unsqueeze(2).repeat(1, 1, num_patches, 1)
-            embedding = rearrange(embedding, 'n m t d->(n t) m d')
+            embedding = embedding.unsqueeze(1).repeat(1, num_patches, 1, 1)
+            embedding = rearrange(embedding, 'b t f d->(b t) f d')
         return embedding
 
 def conv_nd(dims, *args, **kwargs):

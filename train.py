@@ -36,7 +36,7 @@ from torch.utils.data.distributed import DistributedSampler
 from utils import (clip_grad_norm_, create_logger, update_ema, 
                    requires_grad, cleanup, create_tensorboard, 
                    write_tensorboard, setup_distributed,
-                   get_experiment_dir, text_preprocessing)
+                   get_experiment_dir, visualize_frames)
 import numpy as np
 from transformers import T5EncoderModel, T5Tokenizer
 
@@ -89,8 +89,8 @@ def main(args):
     args.latent_size = sample_size
     model = get_models(args)
     # Note that parameter initialization is done within the Latte constructor
-    ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
-    requires_grad(ema, False)
+    # ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
+    # requires_grad(ema, False)
     diffusion = create_diffusion(timestep_respacing="", learn_sigma=args.learn_sigma)  # default: 1000 steps, linear noise schedule
     # vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-ema").to(device)
     vae = AutoencoderKL.from_pretrained(args.vae).to(device)
@@ -125,7 +125,7 @@ def main(args):
     model = DDP(model.to(device), device_ids=[local_rank])
 
     logger.info(f"Model Parameters: {sum(p.numel() for p in model.parameters()):,}")
-    opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
+    opt = torch.optim.AdamW(model.parameters(), lr=args.learning_rate, weight_decay=0)
 
     # Freeze vae and text_encoder
     vae.requires_grad_(False)
@@ -161,9 +161,9 @@ def main(args):
     )
 
     # Prepare models for training:
-    update_ema(ema, model.module, decay=0)  # Ensure EMA is initialized with synced weights
+    # update_ema(ema, model.module, decay=0)  # Ensure EMA is initialized with synced weights
     model.train()  # important! This enables embedding dropout for classifier-free guidance
-    ema.eval()  # EMA model should always be in eval mode
+    # ema.eval()  # EMA model should always be in eval mode
 
     # Variables for monitoring/logging purposes:
     train_steps = 0
@@ -207,23 +207,23 @@ def main(args):
             prompt = video_data['prompt']
             video_name = video_data['pano_name']
 
-            max_length = 120
-            text_inputs = tokenizer(
-                prompt,
-                padding="max_length",
-                max_length=max_length,
-                truncation=True,
-                return_attention_mask=True,
-                add_special_tokens=True,
-                return_tensors="pt",
-            )
-            text_input_ids = text_inputs.input_ids
-            attention_mask = text_inputs.attention_mask.to(device)
-
-            prompt_embeds = text_encoder(text_input_ids.to(device), attention_mask=attention_mask).last_hidden_state
-            prompt_embeds = prompt_embeds.to(dtype=text_encoder.dtype, device=device)
-
             with torch.no_grad():
+                max_length = 120
+                text_inputs = tokenizer(
+                    prompt,
+                    padding="max_length",
+                    max_length=max_length,
+                    truncation=True,
+                    return_attention_mask=True,
+                    add_special_tokens=True,
+                    return_tensors="pt",
+                )
+                text_input_ids = text_inputs.input_ids
+                attention_mask = text_inputs.attention_mask.to(device)
+
+                prompt_embeds = text_encoder(text_input_ids.to(device), attention_mask=attention_mask).last_hidden_state
+                prompt_embeds = prompt_embeds.to(dtype=text_encoder.dtype, device=device)
+
                 # Map input images to latent space + normalize latents:
                 b, _, _, _, _ = x.shape
                 x = rearrange(x, 'b f c h w -> (b f) c h w').contiguous()
@@ -251,7 +251,7 @@ def main(args):
             opt.step()
             lr_scheduler.step()
             opt.zero_grad()
-            update_ema(ema, model.module)
+            # update_ema(ema, model.module)
 
             # Log loss values:
             running_loss += loss.item()
@@ -280,7 +280,7 @@ def main(args):
                 if rank == 0:
                     checkpoint = {
                         "model": model.module.state_dict(),
-                        "ema": ema.state_dict(),
+                        # "ema": ema.state_dict(),
                         # "opt": opt.state_dict(),
                         # "args": args
                     }

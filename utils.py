@@ -18,6 +18,7 @@ from diffusers.utils import is_bs4_available, is_ftfy_available
 import html
 import re
 import urllib.parse as ul
+import matplotlib.pyplot as plt
 
 if is_bs4_available():
     from bs4 import BeautifulSoup
@@ -450,8 +451,12 @@ def clean_caption(caption):
 
     return caption.strip()
 
-
-
-    
-
-
+def visualize_frames(frames, title='Results'):
+    b, f, c, h, w = frames.shape
+    fig, axs = plt.subplots(b, f, figsize=(20, 5))
+    fig.suptitle(title)
+    for i in range(b):
+        for j in range(f):
+            axs[i, j].imshow(np.transpose(frames[i, j].cpu().numpy(), (1, 2, 0)))
+            axs[i, j].axis('off')
+    plt.show()
