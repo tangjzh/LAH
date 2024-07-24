@@ -2,18 +2,21 @@
 ckpt: # will be overwrite
 save_img_path: "./sample_videos/" # will be overwrite
 data: # will be overwrite
-masked: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17]
+masked: [1,2,3,4,5,6,7]
 pretrained_model_path: "checkpoints/Latte/"
 text_encoder: "google/flan-t5-base"
 vae: "stabilityai/sd-vae-ft-ema"
 
 # model config: 
 model: LaHT-B/2
-num_frames: 18
+num_frames: 8
 image_size: 256 # choices=[256, 512]
 patch_size: 2
-num_layer: 6
+num_layer: 16
 num_attention_heads: 16
+attention_head_dim: 72
+cross_attention_dim: 1152
+caption_channels: 768
 frame_interval: 3
 fixed_spatial: False
 attention_bias: True
@@ -24,11 +27,13 @@ num_classes:
 # model speedup
 use_compile: False
 use_fp16: False
+enable_xformers_memory_efficient_attention: True
+gradient_checkpointing: False
 
 # sample config:
 seed:
-sample_method: 'ddpm'
-num_sampling_steps: 250
+sample_method: 'ddim'
+num_sampling_steps: 3
 cfg_scale: 1.0
 run_time: 12
 num_sample: 1

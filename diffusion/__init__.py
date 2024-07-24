@@ -14,6 +14,8 @@ def create_diffusion(
     sigma_small=False,
     predict_xstart=False,
     learn_sigma=True,
+    align_camera=True,
+    align_text=True,
     # learn_sigma=False,
     rescale_learned_sigmas=False,
     diffusion_steps=1000
@@ -42,6 +44,8 @@ def create_diffusion(
             if not learn_sigma
             else gd.ModelVarType.LEARNED_RANGE
         ),
-        loss_type=loss_type
+        loss_type=loss_type,
+        align_camera=align_camera,
+        align_text=align_text,
         # rescale_timesteps=rescale_timesteps,
     )

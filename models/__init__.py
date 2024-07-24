@@ -31,14 +31,17 @@ def get_models(args):
     if 'LaHT' in args.model:
         # TODO: use community weights
         return LatteT2V(num_attention_heads=args.num_attention_heads, 
+                        attention_head_dim=args.attention_head_dim,
                         in_channels=4,
                         patch_size=args.patch_size,
                         sample_size=32,
-                        caption_channels=768,
-                        cross_attention_dim=1408,
+                        caption_channels=args.caption_channels,
+                        cross_attention_dim=args.cross_attention_dim,
                         norm_type='ada_norm_single',
                         num_layers=args.num_layer,
-                        video_length=args.num_frames)
+                        video_length=args.num_frames,
+                        efficient_mode=args.enable_xformers_memory_efficient_attention,
+                        gradient_checkpointing=args.gradient_checkpointing)
         # return LatteT2V.from_pretrained(args.pretrained_model_path, subfolder="transformer", video_length=args.video_length)
     elif 'LaH' in args.model:
         return Latte_models[args.model](

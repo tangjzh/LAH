@@ -11,6 +11,9 @@ import torch as th
 import enum
 
 from .diffusion_utils import discretized_gaussian_log_likelihood, normal_kl
+import torch.nn.functional as F
+import torch
+from einops import rearrange
 
 
 def mean_flat(tensor):
@@ -156,12 +159,18 @@ class GaussianDiffusion:
         betas,
         model_mean_type,
         model_var_type,
-        loss_type
+        loss_type,
+        align_camera,
+        align_text,
     ):
 
         self.model_mean_type = model_mean_type
         self.model_var_type = model_var_type
         self.loss_type = loss_type
+        self.align_camera = align_camera
+        self.align_text = align_text
+        self.logit_scale = 1 / 0.007
+        self.text_temp = 0.1
 
         # Use float64 for accuracy.
         betas = np.array(betas, dtype=np.float64)
@@ -716,6 +725,59 @@ class GaussianDiffusion:
         output = th.where((t == 0), decoder_nll, kl)
         return {"output": output, "pred_xstart": out["pred_xstart"]}
 
+    def _pose_loss(self, scene_embed, frame_embed, camera_embed):
+        b, f, t, d = frame_embed.shape
+        local_embed = camera_embed @ scene_embed # (b, f, d)
+        # frame_embed = F.adaptive_avg_pool2d(frame_embed, (1, d)).squeeze(2) # (b, f, d)
+        frame_embed, _ = frame_embed.max(dim=2)
+
+        local_embed, frame_embed = F.normalize(local_embed, dim=-1), F.normalize(frame_embed, dim=-1)
+
+        logits_l2f = self.logit_scale * (local_embed @ frame_embed.transpose(-1, -2))
+        logits_f2l = logits_l2f.transpose(-1, -2)
+        labels = torch.arange(f, device=frame_embed.device).long().repeat(b)
+
+        logits_f2l = rearrange(logits_f2l, 'b n1 n2 -> (b n1) n2')
+        logits_l2f = rearrange(logits_l2f, 'b n1 n2 -> (b n1) n2')
+        loss_l2f = F.cross_entropy(logits_l2f, labels)
+        loss_f2l = F.cross_entropy(logits_f2l, labels)
+        return (loss_f2l + loss_l2f) / 2
+
+    def _text_loss(self, scene_embed, prompt_embed):
+        b = scene_embed.shape[0]
+        g_scene_embed = F.adaptive_avg_pool1d(scene_embed.permute(0, 2, 1), 1).squeeze(2)
+        g_prompt_embed = F.adaptive_avg_pool1d(prompt_embed.permute(0, 2, 1), 1).squeeze(2)
+
+        g_scene_embed, g_prompt_embed = F.normalize(g_scene_embed, dim=-1), F.normalize(g_prompt_embed, dim=-1)
+        logits_s2p = self.logit_scale * (g_scene_embed @ g_prompt_embed.transpose(-1, -2))
+        logits_p2s = logits_s2p.transpose(-1, -2)
+        labels = torch.arange(b, device=scene_embed.device)
+
+        loss_s2p = F.cross_entropy(logits_s2p, labels)
+        loss_p2s = F.cross_entropy(logits_p2s, labels)
+        loss_global = (loss_p2s + loss_s2p) / 2
+
+        with torch.no_grad():
+            attn_sim = torch.bmm(prompt_embed, scene_embed.transpose(-1, -2))
+            word_num = prompt_embed.shape[1]
+            attn_score = F.softmax(attn_sim / self.text_temp, dim=-1)
+            prompt_attn_out = torch.bmm(attn_score, scene_embed)
+        
+        prompt_attn_out = F.normalize(prompt_attn_out, dim=-1)
+        word_sim = torch.bmm(prompt_embed, prompt_attn_out.transpose(-1, -2)) / self.text_temp
+        word_sim_1 = rearrange(word_sim, "b n1 n2 -> (b n1) n2")
+        targets = torch.arange(word_num).type_as(
+            prompt_embed).long().repeat(b)
+        loss_word_1 = F.cross_entropy(word_sim_1, targets)
+
+        word_sim_2 = rearrange(word_sim, "b n1 n2 -> (b n2) n1")
+        loss_word_2 = F.cross_entropy(word_sim_2, targets)
+        loss_word = (loss_word_1 + loss_word_2) / 2
+
+        loss_local = loss_word
+
+        return (loss_global + loss_local) / 2
+
     def training_losses(self, model, x_start, t, model_kwargs=None, noise=None):
         """
         Compute training losses for a single timestep.
@@ -748,7 +810,7 @@ class GaussianDiffusion:
             if self.loss_type == LossType.RESCALED_KL:
                 terms["loss"] *= self.num_timesteps
         elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
-            model_output = model(x_t, t, **model_kwargs)
+            (model_output, scene_embed, frame_embed, camera_embed, prompt_embed) = model(x_t, t, return_dict=False, **model_kwargs)
             # try:
             #     model_output = model(x_t, t, **model_kwargs).sample # for tav unet
             # except:
@@ -785,10 +847,15 @@ class GaussianDiffusion:
             }[self.model_mean_type]
             assert model_output.shape == target.shape == x_start.shape
             terms["mse"] = mean_flat((target - model_output) ** 2)
-            if "vb" in terms:
-                terms["loss"] = terms["mse"] + terms["vb"]
-            else:
-                terms["loss"] = terms["mse"]
+            
+            if self.align_camera:
+                terms["camera"] = self._pose_loss(scene_embed, frame_embed, camera_embed) * 0.1
+
+            if self.align_text:
+                terms["text"] = self._text_loss(scene_embed, prompt_embed) * 0.1
+
+            loss = terms.get("mse", 0) + terms.get("vb", 0) + terms.get("camera", 0) + terms.get("text", 0)
+            terms["loss"] = loss
         else:
             raise NotImplementedError(self.loss_type)
 

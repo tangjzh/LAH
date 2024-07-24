@@ -124,6 +124,56 @@ class FeedForward(nn.Module):
                 hidden_states = module(hidden_states)
         return hidden_states
 
+class SpaceTimeEmbedder(nn.Module):
+    def __init__(self, inner_dim, 
+                 camera_dim,
+                 timestamp_dim,
+                 num_attention_heads=16, 
+                 attention_head_dim=72, 
+                 video_length=8,
+                 dropout=0.) -> None:
+        super().__init__()
+        
+        self.camera_proj = CameraEmbedder(embed_dim=camera_dim)
+        self.attn1 = GatedSelfAttentionDense(inner_dim, 
+                                            camera_dim, 
+                                            num_attention_heads, 
+                                            attention_head_dim)
+        
+        self.attn2 = GatedSelfAttentionDense(inner_dim, 
+                                            timestamp_dim, 
+                                            num_attention_heads, 
+                                            attention_head_dim)
+
+        self.ffn = FeedForward(inner_dim, inner_dim, dropout=dropout)
+
+        temp_pos_embed = self.get_1d_sincos_temp_embed(timestamp_dim, video_length)
+        self.register_buffer("temp_pos_embed", torch.from_numpy(temp_pos_embed).float().unsqueeze(0), persistent=False)
+    
+    def forward(self, hidden_states, camera_pose=None, enable_time=False, num_patches=None):
+        if camera_pose is not None:
+            camera_emb = self.camera_proj(camera_pose, num_patches)
+        else:
+            shape = hidden_states.shape[:-1] + (self.camera_proj.embed_dim,)
+            camera_emb = torch.zeros(shape, device=hidden_states.device, dtype=hidden_states.dtype)
+
+        hidden_states = self.attn1(hidden_states, camera_emb)
+
+        if enable_time:
+            temp_pos_embed = repeat(self.temp_pos_embed, 'b f d -> (repeat b) f d', repeat=hidden_states.shape[0])
+        else:
+            shape = (hidden_states.shape[0],) + self.temp_pos_embed.shape[1:]
+            temp_pos_embed = torch.zeros(shape, device=hidden_states.device, dtype=hidden_states.dtype)
+
+        hidden_states = self.attn2(hidden_states, temp_pos_embed)
+        hidden_states = self.ffn(hidden_states)
+
+        return hidden_states
+
+    def get_1d_sincos_temp_embed(self, embed_dim, length):
+        pos = torch.arange(0, length).unsqueeze(1)
+        return get_1d_sincos_pos_embed_from_grid(embed_dim, pos)
+
 @maybe_allow_in_graph
 class BasicTransformerBlock_(nn.Module):
     r"""
@@ -429,6 +479,20 @@ class AdaLayerNormSingle(nn.Module):
         embedded_timestep = self.emb(timestep, batch_size=batch_size, hidden_dtype=hidden_dtype, resolution=None, aspect_ratio=None)
         return self.linear(self.silu(embedded_timestep)), embedded_timestep
 
+class AlignProjection(nn.Module):
+    def __init__(self, in_channels):
+        super(AlignProjection, self).__init__()
+        self.proj = nn.Conv2d(in_channels + 1, in_channels // 16, kernel_size=1)
+
+    def forward(self, frame_embed, timestep_embed):
+        timestep_embed = rearrange(timestep_embed, '(b f) d -> b f d', f=frame_embed.shape[1])
+        timestep_embed = repeat(timestep_embed, 'b f d -> b t f d', t=1)
+        frame_embed = rearrange(frame_embed, 'b f t d -> b t f d')
+        frame_embed = torch.cat([frame_embed, timestep_embed], dim=1)
+        frame_embed = self.proj(frame_embed)
+        frame_embed = rearrange(frame_embed, 'b t f d -> b f t d')
+        return frame_embed
+
 @dataclass
 class Transformer3DModelOutput(BaseOutput):
     """
@@ -499,7 +563,10 @@ class LatteT2V(ModelMixin, ConfigMixin):
         norm_eps: float = 1e-5,
         attention_type: str = "default",
         caption_channels: int = None,
+        efficient_mode: bool = False,
+        gradient_checkpointing: bool = False,
         video_length: int = 16,
+        camera_dim: int = 256,
     ):
         super().__init__()
         self.use_linear_projection = use_linear_projection
@@ -507,6 +574,7 @@ class LatteT2V(ModelMixin, ConfigMixin):
         self.attention_head_dim = attention_head_dim
         inner_dim = num_attention_heads * attention_head_dim
         self.video_length = video_length
+        self.efficient_mode = efficient_mode
 
         conv_cls = nn.Conv2d if USE_PEFT_BACKEND else LoRACompatibleConv
         linear_cls = nn.Linear if USE_PEFT_BACKEND else LoRACompatibleLinear
@@ -631,6 +699,7 @@ class LatteT2V(ModelMixin, ConfigMixin):
             ]
         )
 
+        self.num_layer = num_layers
 
         # 4. Define output layers
         self.out_channels = in_channels if out_channels is None else out_channels
@@ -665,25 +734,36 @@ class LatteT2V(ModelMixin, ConfigMixin):
         if caption_channels is not None:
             self.caption_projection = CaptionProjection(in_features=caption_channels, hidden_size=inner_dim)
 
-        self.gradient_checkpointing = False
+        self.gradient_checkpointing = gradient_checkpointing
 
         # define temporal positional embedding
         #temp_pos_embed = self.get_1d_sincos_temp_embed(inner_dim, video_length) # 1152 hidden size
         #self.register_buffer("temp_pos_embed", torch.from_numpy(temp_pos_embed).float().unsqueeze(0), persistent=False)
         
-        # define camera pose embedder
-        self.cam_proj = CameraEmbedder(embed_dim=inner_dim)
+        # define condition embedder
+        self.condition_embedder = SpaceTimeEmbedder(
+            inner_dim, camera_dim, inner_dim, video_length=video_length
+        )
 
+        self.align_proj = AlignProjection((sample_size // patch_size) ** 2)
+
+        # Add a class token
+        self.scene_token = nn.Parameter(torch.zeros(1, 1, inner_dim))
+
+        if self.efficient_mode:
+            for name, module in self.named_modules():
+                if isinstance(module, Attention):
+                    module.set_use_memory_efficient_attention_xformers(True)
 
     def _set_gradient_checkpointing(self, module, value=False):
         self.gradient_checkpointing = value
-
 
     def forward(
         self,
         hidden_states: torch.Tensor,
         timestep: Optional[torch.LongTensor],
         camera_pose: torch.FloatTensor = None,
+        enable_time: bool = False,
         encoder_hidden_states: Optional[torch.Tensor] = None,
         added_cond_kwargs: Dict[str, torch.Tensor] = None,
         class_labels: Optional[torch.LongTensor] = None,
@@ -735,6 +815,7 @@ class LatteT2V(ModelMixin, ConfigMixin):
         """
         input_batch_size, frame, c, h, w = hidden_states.shape
         frame = frame - use_image_num
+        global_state = None
         hidden_states = rearrange(hidden_states, 'b f c h w -> (b f) c h w').contiguous()
        
         # ensure attention_mask is a bias, and give it a singleton query_tokens dimension.
@@ -808,6 +889,9 @@ class LatteT2V(ModelMixin, ConfigMixin):
         timestep_spatial = repeat(timestep, 'b d -> (b f) d', f=frame + use_image_num).contiguous()
         timestep_temp = repeat(timestep, 'b d -> (b p) d', p=num_patches).contiguous()
 
+        # prepare scene token
+        batch_scene_token = self.scene_token.expand(input_batch_size * num_patches, -1, -1).contiguous() # b * t, 1, d
+
         for i, (spatial_block, temp_block) in enumerate(zip(self.transformer_blocks, self.temporal_transformer_blocks)):
 
             if self.training and self.gradient_checkpointing:
@@ -831,7 +915,7 @@ class LatteT2V(ModelMixin, ConfigMixin):
                         hidden_states_image = hidden_states[:, frame:, ...]
 
                         if i == 0:
-                            hidden_states_video = hidden_states_video + self.cam_proj(camera_pose, num_patches)
+                            hidden_states_video = self.condition_embedder(hidden_states_video, camera_pose, enable_time, num_patches)
                         hidden_states_video = torch.utils.checkpoint.checkpoint(
                             temp_block,
                             hidden_states_video,
@@ -849,7 +933,10 @@ class LatteT2V(ModelMixin, ConfigMixin):
 
                     else:
                         if i == 0:
-                            hidden_states = hidden_states + self.cam_proj(camera_pose, num_patches)
+                            hidden_states = self.condition_embedder(hidden_states, camera_pose, enable_time, num_patches)
+                            hidden_states = torch.cat([batch_scene_token, hidden_states], dim=1) # b * t, f + 1, d
+                        else:
+                            hidden_states = torch.cat([global_state, hidden_states], dim=1) # b * t, f + 1, d
                         
                         hidden_states = torch.utils.checkpoint.checkpoint(
                             temp_block,
@@ -862,6 +949,9 @@ class LatteT2V(ModelMixin, ConfigMixin):
                             class_labels,
                             use_reentrant=False,
                         )
+
+                        global_state = hidden_states[:, 0:1, :]
+                        hidden_states = hidden_states[:, 1:, :]
 
                         hidden_states = rearrange(hidden_states, '(b t) f d -> (b f) t d', b=input_batch_size).contiguous()
             else:
@@ -883,6 +973,9 @@ class LatteT2V(ModelMixin, ConfigMixin):
                         hidden_states_video = hidden_states[:, :frame, ...]
                         hidden_states_image = hidden_states[:, frame:, ...]
 
+                        if i == 0:
+                            hidden_states_video = self.condition_embedder(hidden_states_video, camera_pose, enable_time, num_patches)
+
                         hidden_states_video = temp_block(
                             hidden_states_video,
                             None, # attention_mask
@@ -898,8 +991,11 @@ class LatteT2V(ModelMixin, ConfigMixin):
 
                     else:
                         if i == 0 and frame > 1:
-                            hidden_states = hidden_states + self.cam_proj(camera_pose, num_patches)
-                        
+                            hidden_states = self.condition_embedder(hidden_states, camera_pose, enable_time, num_patches)
+                            hidden_states = torch.cat([batch_scene_token, hidden_states], dim=1) # b * t, f + 1, d
+                        else:
+                            hidden_states = torch.cat([global_state, hidden_states], dim=1) # b * t, f + 1, d
+
                         hidden_states = temp_block(
                             hidden_states,
                             None, # attention_mask
@@ -909,9 +1005,12 @@ class LatteT2V(ModelMixin, ConfigMixin):
                             cross_attention_kwargs,
                             class_labels,
                         )
+                        
+                        global_state = hidden_states[:, 0:1, :]
+                        hidden_states = hidden_states[:, 1:, :]
 
                         hidden_states = rearrange(hidden_states, '(b t) f d -> (b f) t d', b=input_batch_size).contiguous()
-
+        local_state = rearrange(hidden_states, '(b f) t d -> b f t d', b=input_batch_size).contiguous()
 
         if self.is_input_patches:
             if self.config.norm_type != "ada_norm_single":
@@ -942,7 +1041,11 @@ class LatteT2V(ModelMixin, ConfigMixin):
             output = rearrange(output, '(b f) c h w -> b f c h w', b=input_batch_size).contiguous()
 
         if not return_dict:
-            return (output,)
+            global_state = rearrange(global_state, '(b t) f d -> b t f d', b=input_batch_size).contiguous().squeeze(-2)
+            local_state = self.align_proj(local_state, embedded_timestep)
+            camera_emb = self.condition_embedder.camera_proj(camera_pose)
+            # (1, 8, 4, 32, 32) (1, 256, 1408) (1, 10, 256, 1408) (1, 10, 256) (1, 512, 1408)
+            return (output, global_state, local_state, camera_emb, encoder_hidden_states)
 
         # return Transformer3DModelOutput(sample=output)
         return output

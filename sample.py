@@ -112,11 +112,16 @@ def main(args):
 
             pose = transformed_pose[:-1, :].flatten()
             poses.append(torch.tensor(pose, dtype=torch.float32))
+
+        images = images[:int(args.num_frames)]
+        poses = poses[:int(args.num_frames)]
         
-        z = torch.stack(
+        x = torch.stack(
             [img.squeeze() if img is not None
              else torch.randn(4, latent_size, latent_size, device=device) for img in images]
         ).unsqueeze(0).to(dtype=text_encoder.dtype, device=device)
+        t = torch.tensor([int(args.num_sampling_steps) - 1] * x.shape[0], device=device)
+        z = diffusion.q_sample(x, t)
         camera_pose = torch.stack(poses).unsqueeze(0).to(dtype=text_encoder.dtype, device=device)
 
     if args.use_fp16:
@@ -154,7 +159,6 @@ def main(args):
             sample_fn, z.shape, z, clip_denoised=False, model_kwargs=model_kwargs, progress=True, device=device
         )
 
-    print(samples.shape)
     if args.use_fp16:
         samples = samples.to(dtype=torch.float16)
     b, f, c, h, w = samples.shape

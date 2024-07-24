@@ -8,19 +8,24 @@ vae: "stabilityai/sd-vae-ft-ema"
 
 # save and load
 results_dir: "./results"
-pretrained: 
+pretrained: results/075-LaHT-B-2-F8S3-mp3d-Xfor-Gc/checkpoints/0020000.pt
 
 # model config: 
 model: LaHT-B/2
-num_frames: 18
+num_frames: 8
 image_size: 256 # choices=[256, 512]
 patch_size: 2
-num_layer: 6
+num_layer: 16
 num_attention_heads: 16
-num_sampling_steps: 250
+attention_head_dim: 72
+cross_attention_dim: 1152
+caption_channels: 768
+num_sampling_steps: 1000
 frame_interval: 3
 fixed_spatial: False
 attention_bias: True
+align_camera: True
+align_text: False
 learn_sigma: False
 extras: 78 # [1, 2] 1 unconditional generation, 2 class-conditional generation
 
@@ -30,7 +35,7 @@ learning_rate: 1e-4
 ckpt_every: 10000
 clip_max_norm: 0.1
 start_clip_iter: 20000
-local_batch_size: 1 # important
+local_batch_size: 2 # important
 max_train_steps: 1000000
 global_seed: 3407
 num_workers: 8
@@ -43,5 +48,5 @@ num_classes:
 # low VRAM and speed up training
 use_compile: False
 mixed_precision: False
-enable_xformers_memory_efficient_attention: False
-gradient_checkpointing: False
+enable_xformers_memory_efficient_attention: True
+gradient_checkpointing: True

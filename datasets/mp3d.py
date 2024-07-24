@@ -4,26 +4,39 @@ import torch.utils.data as data
 import zipfile
 import numpy as np
 from PIL import Image
-from transformers import T5EncoderModel, T5Tokenizer
-from diffusers.models import AutoencoderKL
 from .camera_utils import transform_pose
+import random
 
 IMG_EXTENSIONS = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG']
 
 class MP3DDataset(data.Dataset):
     def __init__(self, 
                  configs,
-                 transform=None):
+                 transform=None,
+                 random=True,
+                 return_pt=True):
         self.configs = configs
         self.data_root = configs.data_path
+        self.video_length = configs.num_frames
         self.transform = transform
+        self.random = random
+        self.return_pt = return_pt
 
         self.data_all = self.load_data(self.data_root)
 
     def __getitem__(self, index):
         item = self.data_all[index]
-        frames = self.load_images(item['color_image_paths'])
-        camera_pose = self.load_camera_pose(item['pose_paths'])
+        
+        if self.random:
+            indices = random.sample(range(len(item['color_image_paths'])), self.video_length)
+        else:
+            indices = range(self.video_length)
+        
+        selected_color_image_paths = [item['color_image_paths'][i] for i in indices]
+        selected_pose_paths = [item['pose_paths'][i] for i in indices]
+        
+        frames = self.load_images(selected_color_image_paths)
+        camera_pose = self.load_camera_pose(selected_pose_paths)
         prompt = self.load_text_descriptions(item['text_paths'])
 
         return {
@@ -73,7 +86,8 @@ class MP3DDataset(data.Dataset):
                     image = self.transform(image)
                 images.append(image)
         
-        images = torch.stack(images)
+        if self.return_pt:
+            images = torch.stack(images)
         return images
 
     def load_camera_pose(self, pose_paths):
@@ -94,7 +108,8 @@ class MP3DDataset(data.Dataset):
                 pose = transformed_pose[:-1, :].flatten()
                 poses.append(torch.tensor(pose, dtype=torch.float32))
         
-        poses = torch.stack(poses)
+        if self.return_pt:
+            poses = torch.stack(poses)
         return poses
 
     def load_text_descriptions(self, text_paths):

@@ -91,7 +91,11 @@ def main(args):
     # Note that parameter initialization is done within the Latte constructor
     # ema = deepcopy(model).to(device)  # Create an EMA of the model for use after training
     # requires_grad(ema, False)
-    diffusion = create_diffusion(timestep_respacing="", learn_sigma=args.learn_sigma)  # default: 1000 steps, linear noise schedule
+    diffusion = create_diffusion(timestep_respacing="", 
+                                 learn_sigma=args.learn_sigma,
+                                 align_camera=args.align_camera,
+                                 align_text=args.align_text,
+                                 diffusion_steps=args.num_sampling_steps)  # default: 1000 steps, linear noise schedule
     # vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-ema").to(device)
     vae = AutoencoderKL.from_pretrained(args.vae).to(device)
     tokenizer = T5Tokenizer.from_pretrained(args.text_encoder)
@@ -238,10 +242,11 @@ def main(args):
             else:
                 model_kwargs = dict(y=None)
 
-            t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
-            loss_dict = diffusion.training_losses(model, x, t, model_kwargs)
-            loss = loss_dict["loss"].mean()
-            loss.backward()
+            with torch.autocast(device_type="cuda", enabled=args.mixed_precision):
+                t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
+                loss_dict = diffusion.training_losses(model, x, t, model_kwargs)
+                loss = loss_dict["loss"].mean()
+                loss.backward()
 
             if train_steps < args.start_clip_iter: # if train_steps >= start_clip_iter, will clip gradient
                 gradient_norm = clip_grad_norm_(model.module.parameters(), args.clip_max_norm, clip_grad=False)
@@ -268,6 +273,18 @@ def main(args):
                 avg_loss = avg_loss.item() / dist.get_world_size()
                 # logger.info(f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}")
                 logger.info(f"(step={train_steps:07d}/epoch={epoch:04d}) Train Loss: {avg_loss:.4f}, Gradient Norm: {gradient_norm:.4f}, Train Steps/Sec: {steps_per_sec:.2f}")
+                
+                # Aggregate all loss values
+                loss_detail = {}
+                for name, loss_tensor in loss_dict.items():
+                    reduced_loss = torch.tensor(loss_tensor.mean().item(), device=device)
+                    dist.all_reduce(reduced_loss, op=dist.ReduceOp.SUM)
+                    reduced_loss = reduced_loss.item() / dist.get_world_size()
+                    loss_detail[name] = reduced_loss
+
+                loss_detail_str = ", ".join([f"{name}: {value:.4f}" for name, value in loss_detail.items()])
+                logger.info(loss_detail_str)
+                
                 write_tensorboard(tb_writer, 'Train Loss', avg_loss, train_steps)
                 write_tensorboard(tb_writer, 'Gradient Norm', gradient_norm, train_steps)
                 # Reset monitoring variables:
