@@ -107,6 +107,8 @@ def main(args):
         if "ema" in checkpoint:  # supports checkpoints from train.py
             logger.info('Using ema ckpt!')
             checkpoint = checkpoint["ema"]
+        else:
+            checkpoint = checkpoint["model"]
 
         model_dict = model.state_dict()
         # 1. filter out unnecessary keys
@@ -208,6 +210,7 @@ def main(args):
 
             x = video_data['frames'].to(device, non_blocking=True)
             camera_pose = video_data['camera_pose'].to(device, non_blocking=True)
+            ray = video_data['ray'].to(device, non_blocking=True)
             prompt = video_data['prompt']
             video_name = video_data['pano_name']
 
@@ -236,7 +239,7 @@ def main(args):
 
             if args.extras == 78: # text-to-video
                 # raise 'T2V training are Not supported at this moment!'
-                model_kwargs = dict(camera_pose=camera_pose, encoder_hidden_states=prompt_embeds)
+                model_kwargs = dict(camera_pose=camera_pose, camera_ray=ray, encoder_hidden_states=prompt_embeds)
             elif args.extras == 2:
                 model_kwargs = dict(y=video_name)
             else:

@@ -167,6 +167,65 @@ class CameraEmbedder(nn.Module):
             embedding = embedding.unsqueeze(1).repeat(1, num_patches, 1, 1)
             embedding = rearrange(embedding, 'b t f d->(b t) f d')
         return embedding
+    
+class PositionalEncoding(nn.Module):
+    def __init__(self, num_octaves=8, start_octave=0):
+        super().__init__()
+        self.num_octaves = num_octaves
+        self.start_octave = start_octave
+
+    def forward(self, coords, rays=None):
+        embed_fns = []
+        batch_size, num_points, dim = coords.shape
+
+        octaves = torch.arange(self.start_octave, self.start_octave + self.num_octaves)
+        octaves = octaves.float().to(coords)
+        multipliers = 2**octaves * math.pi
+        coords = coords.unsqueeze(-1)
+        while len(multipliers.shape) < len(coords.shape):
+            multipliers = multipliers.unsqueeze(0)
+
+        scaled_coords = coords * multipliers
+
+        sines = torch.sin(scaled_coords).reshape(batch_size, num_points, dim * self.num_octaves)
+        cosines = torch.cos(scaled_coords).reshape(batch_size, num_points, dim * self.num_octaves)
+
+        result = torch.cat((sines, cosines), -1)
+        return result
+
+
+class RayEncoder(nn.Module):
+    def __init__(self, pos_octaves=8, pos_start_octave=0, ray_octaves=4, ray_start_octave=0, output_channels=256):
+        super().__init__()
+        self.pos_encoding = PositionalEncoding(num_octaves=pos_octaves, start_octave=pos_start_octave)
+        self.ray_encoding = PositionalEncoding(num_octaves=ray_octaves, start_octave=ray_start_octave)
+        self.conv_layers = nn.Sequential(
+            nn.Conv2d(6 * (pos_octaves + ray_octaves), 256, kernel_size=3, stride=4, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(256, output_channels, kernel_size=3, stride=4, padding=1),
+            nn.ReLU()
+        )
+
+    def forward(self, pos, rays):
+        b, f, h, w, c = rays.shape
+        rays = rays.flatten(0, 1)
+        pos = pos.flatten(0, 1)
+
+        batchsize, height, width, dims = rays.shape
+        pos_enc = self.pos_encoding(pos.unsqueeze(1))
+        pos_enc = pos_enc.view(batchsize, pos_enc.shape[-1], 1, 1)
+        pos_enc = pos_enc.repeat(1, 1, height, width)
+        rays = rays.flatten(1, 2)
+
+        ray_enc = self.ray_encoding(rays)
+        ray_enc = ray_enc.view(batchsize, height, width, ray_enc.shape[-1])
+        ray_enc = ray_enc.permute((0, 3, 1, 2))
+        x = torch.cat((pos_enc, ray_enc), 1)
+
+        x = self.conv_layers(x)
+        x = rearrange(x, '(b f) c h w -> (b h w) f c', b=b)
+
+        return x
 
 def conv_nd(dims, *args, **kwargs):
     """

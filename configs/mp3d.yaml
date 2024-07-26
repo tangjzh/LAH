@@ -8,7 +8,7 @@ vae: "stabilityai/sd-vae-ft-ema"
 
 # save and load
 results_dir: "./results"
-pretrained: results/075-LaHT-B-2-F8S3-mp3d-Xfor-Gc/checkpoints/0020000.pt
+pretrained: results/090-LaHT-B-2-F8S3-mp3d-Xfor-Gc/checkpoints/0060000.pt
 
 # model config: 
 model: LaHT-B/2
@@ -24,7 +24,7 @@ num_sampling_steps: 1000
 frame_interval: 3
 fixed_spatial: False
 attention_bias: True
-align_camera: True
+align_camera: False
 align_text: False
 learn_sigma: False
 extras: 78 # [1, 2] 1 unconditional generation, 2 class-conditional generation

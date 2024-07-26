@@ -20,7 +20,7 @@ from models import get_models
 from torchvision.utils import save_image
 from diffusers.models import AutoencoderKL
 from models.clip import TextEmbedder
-from datasets.camera_utils import generate_poses, transform_pose
+from datasets.camera_utils import generate_poses, transform_pose, generate_rays_with_extrinsics
 import imageio
 from transformers import T5EncoderModel, T5Tokenizer
 from torchvision import transforms
@@ -93,7 +93,7 @@ def main(args):
         img_path = os.path.join(args.data, 'images', '*.jpg')
         pose_path = os.path.join(args.data, 'poses', '*.txt')
         images_path, poses_path = glob.glob(img_path), glob.glob(pose_path)
-        images, poses = [], []
+        images, poses, rays = [], [], []
 
         reference_pose = None
         for i, (image, pose) in enumerate(zip(images_path, poses_path)):
@@ -110,11 +110,14 @@ def main(args):
                 image = vae.encode(image.unsqueeze(0)).latent_dist.sample().mul_(0.18215)
             images.append(image)
 
-            pose = transformed_pose[:-1, :].flatten()
+            pose = transformed_pose[:-1, 3].flatten()
+            ray = generate_rays_with_extrinsics(transformed_pose, args.image_size, args.image_size, noisy=True)
             poses.append(torch.tensor(pose, dtype=torch.float32))
+            rays.append(torch.tensor(ray, dtype=torch.float32))
 
         images = images[:int(args.num_frames)]
         poses = poses[:int(args.num_frames)]
+        rays = rays[:int(args.num_frames)]
         
         x = torch.stack(
             [img.squeeze() if img is not None
@@ -123,10 +126,12 @@ def main(args):
         t = torch.tensor([int(args.num_sampling_steps) - 1] * x.shape[0], device=device)
         z = diffusion.q_sample(x, t)
         camera_pose = torch.stack(poses).unsqueeze(0).to(dtype=text_encoder.dtype, device=device)
+        camera_ray = torch.stack(rays).unsqueeze(0).to(dtype=text_encoder.dtype, device=device)
 
     if args.use_fp16:
         z = z.to(dtype=torch.float16)
         camera_pose = camera_pose.to(dtype=torch.float16)
+        camera_ray = camera_ray.to(dtype=torch.float16)
 
     max_length = 120
     text_inputs = tokenizer(
@@ -147,7 +152,7 @@ def main(args):
     # Setup classifier-free guidance:
     # z = torch.cat([z, z], 0)
     sample_fn = model.forward
-    model_kwargs = dict(camera_pose=camera_pose, encoder_hidden_states=prompt_embeds)
+    model_kwargs = dict(camera_pose=camera_pose, camera_ray=camera_ray, encoder_hidden_states=prompt_embeds)
 
     # Sample images:
     if args.sample_method == 'ddim':

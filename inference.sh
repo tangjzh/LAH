@@ -1,3 +1,3 @@
 CUDA_VISIBLE_DEVICES=1
 
-python sample.py --config configs/mp3d_sample.yaml --ckpt results/075-LaHT-B-2-F8S3-mp3d-Xfor-Gc/checkpoints/0020000.pt --prompt "a long hallway with a couch and a chair. a room with a wooden floor and white walls. a bathroom with white walls and a wooden floor. a long hallway with wooden floors and white walls. a long hallway with wood floors and white walls. a hallway leading to a living room with a couch. a living room with a couch and a chair." --data data/inference/1
+python sample.py --config configs/mp3d_sample.yaml --ckpt results/090-LaHT-B-2-F8S3-mp3d-Xfor-Gc/checkpoints/0060000.pt --prompt "" --data data/inference/1

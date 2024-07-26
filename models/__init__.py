@@ -41,7 +41,8 @@ def get_models(args):
                         num_layers=args.num_layer,
                         video_length=args.num_frames,
                         efficient_mode=args.enable_xformers_memory_efficient_attention,
-                        gradient_checkpointing=args.gradient_checkpointing)
+                        gradient_checkpointing=args.gradient_checkpointing,
+                        align_camera=args.align_camera)
         # return LatteT2V.from_pretrained(args.pretrained_model_path, subfolder="transformer", video_length=args.video_length)
     elif 'LaH' in args.model:
         return Latte_models[args.model](

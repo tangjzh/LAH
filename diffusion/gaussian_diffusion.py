@@ -171,6 +171,7 @@ class GaussianDiffusion:
         self.align_text = align_text
         self.logit_scale = 1 / 0.007
         self.text_temp = 0.1
+        self.mask_prob = 0.8
 
         # Use float64 for accuracy.
         betas = np.array(betas, dtype=np.float64)
@@ -727,7 +728,16 @@ class GaussianDiffusion:
 
     def _pose_loss(self, scene_embed, frame_embed, camera_embed):
         b, f, t, d = frame_embed.shape
-        local_embed = camera_embed @ scene_embed # (b, f, d)
+
+        assert camera_embed.shape[-1] == scene_embed.shape[-1] or camera_embed.shape[-1] == scene_embed.shape[-2]
+        if camera_embed.shape[-1] != scene_embed.shape[-1]:
+            local_embed = camera_embed @ scene_embed # (b, f, d)
+        else:
+            with torch.no_grad():
+                attn_sim = torch.bmm(camera_embed, scene_embed.transpose(-1, -2))
+                attn_score = F.softmax(attn_sim / self.text_temp, dim=-1)
+                local_embed = torch.bmm(attn_score, scene_embed)
+        
         # frame_embed = F.adaptive_avg_pool2d(frame_embed, (1, d)).squeeze(2) # (b, f, d)
         frame_embed, _ = frame_embed.max(dim=2)
 
@@ -782,7 +792,7 @@ class GaussianDiffusion:
         """
         Compute training losses for a single timestep.
         :param model: the model to evaluate loss on.
-        :param x_start: the [N x C x ...] tensor of inputs.
+        :param x_start: the [B, F, C, H, W] tensor of inputs.
         :param t: a batch of timestep indices.
         :param model_kwargs: if not None, a dict of extra keyword arguments to
             pass to the model. This can be used for conditioning.
@@ -794,7 +804,13 @@ class GaussianDiffusion:
             model_kwargs = {}
         if noise is None:
             noise = th.randn_like(x_start)
-        x_t = self.q_sample(x_start, t, noise=noise)
+        x_t_ = self.q_sample(x_start, t, noise=noise)
+
+        # Mask
+        mask = th.rand(*x_t_.shape, device=x_t_.device) < self.mask_prob
+        mask[:, 0, :, :, :] = False
+        replacement_noise = th.randn_like(x_t_)
+        x_t = th.where(mask, replacement_noise, x_t_)
 
         terms = {}
 
@@ -840,7 +856,7 @@ class GaussianDiffusion:
 
             target = {
                 ModelMeanType.PREVIOUS_X: self.q_posterior_mean_variance(
-                    x_start=x_start, x_t=x_t, t=t
+                    x_start=x_start, x_t=x_t_, t=t
                 )[0],
                 ModelMeanType.START_X: x_start,
                 ModelMeanType.EPSILON: noise,

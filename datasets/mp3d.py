@@ -4,7 +4,7 @@ import torch.utils.data as data
 import zipfile
 import numpy as np
 from PIL import Image
-from .camera_utils import transform_pose
+from .camera_utils import transform_pose, generate_rays_with_extrinsics
 import random
 
 IMG_EXTENSIONS = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG']
@@ -14,13 +14,16 @@ class MP3DDataset(data.Dataset):
                  configs,
                  transform=None,
                  random=True,
+                 enable_desc=False,
                  return_pt=True):
         self.configs = configs
         self.data_root = configs.data_path
         self.video_length = configs.num_frames
+        self.img_size = configs.image_size
         self.transform = transform
         self.random = random
         self.return_pt = return_pt
+        self.enable_desc = enable_desc
 
         self.data_all = self.load_data(self.data_root)
 
@@ -36,12 +39,13 @@ class MP3DDataset(data.Dataset):
         selected_pose_paths = [item['pose_paths'][i] for i in indices]
         
         frames = self.load_images(selected_color_image_paths)
-        camera_pose = self.load_camera_pose(selected_pose_paths)
+        camera_pose, rays = self.load_camera_pose(selected_pose_paths)
         prompt = self.load_text_descriptions(item['text_paths'])
 
         return {
             'frames': frames,
             'camera_pose': camera_pose,
+            'ray': rays,
             'prompt': prompt,
             'pano_name': item['uuid']
         }
@@ -91,7 +95,7 @@ class MP3DDataset(data.Dataset):
         return images
 
     def load_camera_pose(self, pose_paths):
-        poses = []
+        poses, rays = [], []
         reference_pose = None
         for pose_path in pose_paths:
             zip_file_path, internal_path = pose_path.split('//', 1)
@@ -105,17 +109,24 @@ class MP3DDataset(data.Dataset):
                 else:
                     transformed_pose = transform_pose(reference_pose, pose)
                 
-                pose = transformed_pose[:-1, :].flatten()
+                pose = transformed_pose[:-1, 3].flatten()
+                ray = generate_rays_with_extrinsics(transformed_pose, width=self.img_size, height=self.img_size)
                 poses.append(torch.tensor(pose, dtype=torch.float32))
+                rays.append(torch.tensor(ray, dtype=torch.float32))
         
         if self.return_pt:
             poses = torch.stack(poses)
-        return poses
+            rays = torch.stack(rays)
+        return poses, rays
 
     def load_text_descriptions(self, text_paths):
-        descriptions = ""
-        for path in text_paths:
-            # degree = path.split('_')[-1].split('.')[0]
-            with open(path, 'r') as f:
-                descriptions += f.read() + ". "
-        return descriptions.strip()
+        if self.enable_desc:
+            descriptions = ""
+            for path in text_paths:
+                # degree = path.split('_')[-1].split('.')[0]
+                with open(path, 'r') as f:
+                    descriptions += f.read() + ". "
+            return descriptions.strip()
+        else:
+            instruction = "Observe the surroundings while staying in place."
+            return instruction

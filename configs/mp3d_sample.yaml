@@ -20,6 +20,8 @@ caption_channels: 768
 frame_interval: 3
 fixed_spatial: False
 attention_bias: True
+align_camera: False
+align_text: False
 learn_sigma: True
 extras: 78 # [1, 2] 1 unconditional generation, 2 class-conditional generation
 num_classes:
@@ -33,7 +35,7 @@ gradient_checkpointing: False
 # sample config:
 seed:
 sample_method: 'ddim'
-num_sampling_steps: 3
+num_sampling_steps: 1000
 cfg_scale: 1.0
 run_time: 12
 num_sample: 1
