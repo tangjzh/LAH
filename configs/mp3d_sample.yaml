@@ -2,7 +2,7 @@
 ckpt: # will be overwrite
 save_img_path: "./sample_videos/" # will be overwrite
 data: # will be overwrite
-masked: [1,2,3,4,5,6,7]
+masked: [1, 1, 1, 1, 1, 1, 1, 1]
 pretrained_model_path: "checkpoints/Latte/"
 text_encoder: "google/flan-t5-base"
 vae: "stabilityai/sd-vae-ft-ema"
@@ -16,6 +16,7 @@ num_layer: 16
 num_attention_heads: 16
 attention_head_dim: 72
 cross_attention_dim: 1152
+camera_dim: 768
 caption_channels: 768
 frame_interval: 3
 fixed_spatial: False

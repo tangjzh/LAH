@@ -211,8 +211,10 @@ def main(args):
             x = video_data['frames'].to(device, non_blocking=True)
             camera_pose = video_data['camera_pose'].to(device, non_blocking=True)
             ray = video_data['ray'].to(device, non_blocking=True)
+            mask = video_data['mask'].to(device, non_blocking=True)
             prompt = video_data['prompt']
-            video_name = video_data['pano_name']
+            enable_time = video_data['enable_time'].to(device)
+            enable_camera = video_data['enable_camera'].to(device)
 
             with torch.no_grad():
                 max_length = 120
@@ -239,15 +241,17 @@ def main(args):
 
             if args.extras == 78: # text-to-video
                 # raise 'T2V training are Not supported at this moment!'
-                model_kwargs = dict(camera_pose=camera_pose, camera_ray=ray, encoder_hidden_states=prompt_embeds)
+                model_kwargs = dict(camera_pose=camera_pose, camera_ray=ray, 
+                                    encoder_hidden_states=prompt_embeds, mask=mask,
+                                    enable_time=enable_time, enable_camera=enable_camera)
             elif args.extras == 2:
-                model_kwargs = dict(y=video_name)
+                model_kwargs = dict(y=None)
             else:
                 model_kwargs = dict(y=None)
 
             with torch.autocast(device_type="cuda", enabled=args.mixed_precision):
                 t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
-                loss_dict = diffusion.training_losses(model, x, t, model_kwargs)
+                loss_dict = diffusion.training_losses(model, x, t, model_kwargs, mask=mask)
                 loss = loss_dict["loss"].mean()
                 loss.backward()
 

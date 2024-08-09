@@ -15,7 +15,7 @@ import torch
 import argparse
 import torchvision
 
-from einops import rearrange
+from einops import rearrange, repeat
 from models import get_models
 from torchvision.utils import save_image
 from diffusers.models import AutoencoderKL
@@ -92,12 +92,12 @@ def main(args):
 
         img_path = os.path.join(args.data, 'images', '*.jpg')
         pose_path = os.path.join(args.data, 'poses', '*.txt')
-        images_path, poses_path = glob.glob(img_path), glob.glob(pose_path)
+        images_path, poses_path = sorted(glob.glob(img_path)), sorted(glob.glob(pose_path))
         images, poses, rays = [], [], []
 
         reference_pose = None
         for i, (image, pose) in enumerate(zip(images_path, poses_path)):
-            image = transform_mp3d(Image.open(image)).to(device, dtype=vae.dtype) if i not in args.masked else None
+            image = transform_mp3d(Image.open(image)).to(device, dtype=vae.dtype)
             pose = np.loadtxt(pose).reshape(4, 4)
             if reference_pose is None:
                 reference_pose = pose
@@ -118,13 +118,18 @@ def main(args):
         images = images[:int(args.num_frames)]
         poses = poses[:int(args.num_frames)]
         rays = rays[:int(args.num_frames)]
+        mask = torch.tensor(args.masked).to(dtype=torch.bool, device=device)
         
         x = torch.stack(
-            [img.squeeze() if img is not None
-             else torch.randn(4, latent_size, latent_size, device=device) for img in images]
+            [img.squeeze() for img in images]
         ).unsqueeze(0).to(dtype=text_encoder.dtype, device=device)
-        t = torch.tensor([int(args.num_sampling_steps) - 1] * x.shape[0], device=device)
-        z = diffusion.q_sample(x, t)
+        x = diffusion.q_sample(x)
+
+        c, h, w = x.shape[2:]
+        z = torch.randn_like(x)
+        mask = repeat(mask, 'f -> f c h w', c=c, h=h, w=w).unsqueeze(0)
+        z = torch.where(mask, z, x)
+
         camera_pose = torch.stack(poses).unsqueeze(0).to(dtype=text_encoder.dtype, device=device)
         camera_ray = torch.stack(rays).unsqueeze(0).to(dtype=text_encoder.dtype, device=device)
 

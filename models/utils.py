@@ -205,6 +205,7 @@ class RayEncoder(nn.Module):
             nn.Conv2d(256, output_channels, kernel_size=3, stride=4, padding=1),
             nn.ReLU()
         )
+        self.embed_dim = output_channels
 
     def forward(self, pos, rays):
         b, f, h, w, c = rays.shape

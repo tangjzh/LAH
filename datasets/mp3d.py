@@ -4,11 +4,12 @@ import torch.utils.data as data
 import zipfile
 import numpy as np
 from PIL import Image
-from .camera_utils import transform_pose, generate_rays_with_extrinsics
+from .camera_utils import transform_pose, generate_rays_with_extrinsics, visualize_extrinsics
 import random
 
 IMG_EXTENSIONS = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG']
 
+#TODO: support axis_align_matrix
 class MP3DDataset(data.Dataset):
     def __init__(self, 
                  configs,
@@ -20,6 +21,7 @@ class MP3DDataset(data.Dataset):
         self.data_root = configs.data_path
         self.video_length = configs.num_frames
         self.img_size = configs.image_size
+        self.mask_prob = configs.mask_prob
         self.transform = transform
         self.random = random
         self.return_pt = return_pt
@@ -41,13 +43,19 @@ class MP3DDataset(data.Dataset):
         frames = self.load_images(selected_color_image_paths)
         camera_pose, rays = self.load_camera_pose(selected_pose_paths)
         prompt = self.load_text_descriptions(item['text_paths'])
+        mask = torch.tensor(np.random.rand(self.video_length) < self.mask_prob)
+        if torch.all(~mask):
+            unmask_index = random.randint(0, self.video_length - 1)
+            mask[unmask_index] = True
 
         return {
             'frames': frames,
             'camera_pose': camera_pose,
             'ray': rays,
+            'mask': mask,
             'prompt': prompt,
-            'pano_name': item['uuid']
+            'enable_time': False,
+            'enable_camera': True,
         }
 
     def __len__(self):
@@ -76,7 +84,7 @@ class MP3DDataset(data.Dataset):
                         'uuid': uuid,
                         'pose_paths': pose_path,
                         'color_image_paths': color_image_paths,
-                        'text_paths': text_paths
+                        'text_paths': text_paths,
                     })
         return data
 
@@ -96,6 +104,7 @@ class MP3DDataset(data.Dataset):
 
     def load_camera_pose(self, pose_paths):
         poses, rays = [], []
+        # temp = []
         reference_pose = None
         for pose_path in pose_paths:
             zip_file_path, internal_path = pose_path.split('//', 1)
@@ -104,16 +113,15 @@ class MP3DDataset(data.Dataset):
                 pose = np.loadtxt(pose_file).reshape(4, 4)
                 if reference_pose is None:
                     reference_pose = pose
-                    transformed_pose = np.hstack((np.eye(3), np.zeros((3, 1))))
-                    transformed_pose = np.vstack((transformed_pose, [0, 0, 0, 1]))
-                else:
-                    transformed_pose = transform_pose(reference_pose, pose)
-                
+                transformed_pose = transform_pose(reference_pose, pose)
+                transformed_pose[2, 3] *= -1
+
                 pose = transformed_pose[:-1, 3].flatten()
                 ray = generate_rays_with_extrinsics(transformed_pose, width=self.img_size, height=self.img_size)
+                # temp.append(transformed_pose)
                 poses.append(torch.tensor(pose, dtype=torch.float32))
                 rays.append(torch.tensor(ray, dtype=torch.float32))
-        
+        # visualize_extrinsics(temp, './vis.jpg', 0.002)
         if self.return_pt:
             poses = torch.stack(poses)
             rays = torch.stack(rays)

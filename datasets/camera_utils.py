@@ -70,13 +70,13 @@ def get_camera(num_frames, elevation=15, azimuth_start=0, azimuth_span=360, blen
         cameras.append(camera_matrix.flatten())
     return torch.tensor(np.stack(cameras, 0)).float()
 
-def transform_pose(reference_pose, pose):
+def transform_pose(reference_pose, pose, align_matrix=None):
     reference_R = reference_pose[:3, :3]
     reference_T = reference_pose[:3, 3]
     R = pose[:3, :3]
     T = pose[:3, 3]
-    transformed_R = np.dot(reference_R.T, R)
-    transformed_T = np.dot(reference_R.T, (T - reference_T))
+    transformed_R = R
+    transformed_T = T - reference_T
     transformed_pose = np.hstack((transformed_R, transformed_T[:, np.newaxis]))
     transformed_pose = np.vstack((transformed_pose, [0, 0, 0, 1]))
     return transformed_pose
@@ -101,22 +101,24 @@ def generate_poses(angles, elevations, anchor=None):
     
     return adjusted_poses
 
-def visualize_poses(poses):
+def visualize_extrinsics(extrinsics, save_path=None, length=0.1):
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(0, 0, 0, color='r', s=100, label='Target Point')
-    for i, pose in enumerate(poses):
+    for i, pose in enumerate(extrinsics):
         camera_pos = pose[:3, 3]
         forward = pose[:3, 2]  # Forward vector is the third column
         ax.scatter(camera_pos[0], camera_pos[1], camera_pos[2], label=f'Pose {i+1}')
         ax.text(camera_pos[0], camera_pos[1], camera_pos[2], f'{i+1}', color='blue')
         ax.quiver(camera_pos[0], camera_pos[1], camera_pos[2], 
-                  forward[0], forward[1], forward[2], length=0.1, color='k')
+                  forward[0], forward[1], forward[2], length=length, color='k')
     ax.set_xlabel('X axis')
     ax.set_ylabel('Y axis')
     ax.set_zlabel('Z axis')
     # ax.legend()
     plt.show()
+    if save_path:
+        plt.savefig(save_path)
 
 def get_extrinsic(camera_pos, rays=None, track_point=None, fourxfour=True):
     """ Returns extrinsic matrix mapping world to camera coordinates.

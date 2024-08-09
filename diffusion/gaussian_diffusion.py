@@ -13,14 +13,16 @@ import enum
 from .diffusion_utils import discretized_gaussian_log_likelihood, normal_kl
 import torch.nn.functional as F
 import torch
-from einops import rearrange
+from einops import rearrange, repeat
 
 
-def mean_flat(tensor):
+def mean_flat(tensor, mask=None):
     """
     Take the mean over all non-batch dimensions.
     """
-    return tensor.mean(dim=list(range(1, len(tensor.shape))))
+    tensor = torch.where(mask, tensor, 0.)
+    non_zero = torch.count_nonzero(mask[:, :, 0, 0, 0], dim=-1)
+    return torch.sum(torch.mean(tensor, dim=list(range(len(tensor.shape)))[2:]), dim=-1) / non_zero
 
 
 class ModelMeanType(enum.Enum):
@@ -171,7 +173,6 @@ class GaussianDiffusion:
         self.align_text = align_text
         self.logit_scale = 1 / 0.007
         self.text_temp = 0.1
-        self.mask_prob = 0.8
 
         # Use float64 for accuracy.
         betas = np.array(betas, dtype=np.float64)
@@ -694,7 +695,7 @@ class GaussianDiffusion:
                 img = out["sample"]
 
     def _vb_terms_bpd(
-            self, model, x_start, x_t, t, clip_denoised=True, model_kwargs=None
+            self, model, x_start, x_t, t, mask, clip_denoised=True, model_kwargs=None
     ):
         """
         Get a term for the variational lower-bound.
@@ -713,13 +714,13 @@ class GaussianDiffusion:
         kl = normal_kl(
             true_mean, true_log_variance_clipped, out["mean"], out["log_variance"]
         )
-        kl = mean_flat(kl) / np.log(2.0)
+        kl = mean_flat(kl, mask) / np.log(2.0)
 
         decoder_nll = -discretized_gaussian_log_likelihood(
             x_start, means=out["mean"], log_scales=0.5 * out["log_variance"]
         )
         assert decoder_nll.shape == x_start.shape
-        decoder_nll = mean_flat(decoder_nll) / np.log(2.0)
+        decoder_nll = mean_flat(decoder_nll, mask) / np.log(2.0)
 
         # At the first timestep return the decoder NLL,
         # otherwise return KL(q(x_{t-1}|x_t,x_0) || p(x_{t-1}|x_t))
@@ -727,7 +728,7 @@ class GaussianDiffusion:
         return {"output": output, "pred_xstart": out["pred_xstart"]}
 
     def _pose_loss(self, scene_embed, frame_embed, camera_embed):
-        b, f, t, d = frame_embed.shape
+        b, f, t, d = frame_embed.shape # (b, f, t, d)
 
         assert camera_embed.shape[-1] == scene_embed.shape[-1] or camera_embed.shape[-1] == scene_embed.shape[-2]
         if camera_embed.shape[-1] != scene_embed.shape[-1]:
@@ -736,19 +737,20 @@ class GaussianDiffusion:
             with torch.no_grad():
                 attn_sim = torch.bmm(camera_embed, scene_embed.transpose(-1, -2))
                 attn_score = F.softmax(attn_sim / self.text_temp, dim=-1)
-                local_embed = torch.bmm(attn_score, scene_embed)
+                local_embed = torch.bmm(attn_score, scene_embed) # (2, 8 * 256, 1152)
+                local_embed = rearrange(local_embed, 'b (f t) d -> b f t d', f=f)
         
         # frame_embed = F.adaptive_avg_pool2d(frame_embed, (1, d)).squeeze(2) # (b, f, d)
-        frame_embed, _ = frame_embed.max(dim=2)
+        # frame_embed, _ = frame_embed.max(dim=2)
 
         local_embed, frame_embed = F.normalize(local_embed, dim=-1), F.normalize(frame_embed, dim=-1)
 
-        logits_l2f = self.logit_scale * (local_embed @ frame_embed.transpose(-1, -2))
+        logits_l2f = self.logit_scale * (local_embed @ frame_embed.transpose(-1, -2)) # (b, f, t, t)
         logits_f2l = logits_l2f.transpose(-1, -2)
-        labels = torch.arange(f, device=frame_embed.device).long().repeat(b)
+        labels = torch.arange(t, device=frame_embed.device).long().repeat(f).repeat(b)
 
-        logits_f2l = rearrange(logits_f2l, 'b n1 n2 -> (b n1) n2')
-        logits_l2f = rearrange(logits_l2f, 'b n1 n2 -> (b n1) n2')
+        logits_f2l = rearrange(logits_f2l, 'b n1 n2 n3 -> (b n1 n2) n3')
+        logits_l2f = rearrange(logits_l2f, 'b n1 n2 n3 -> (b n1 n2) n3')
         loss_l2f = F.cross_entropy(logits_l2f, labels)
         loss_f2l = F.cross_entropy(logits_f2l, labels)
         return (loss_f2l + loss_l2f) / 2
@@ -788,7 +790,7 @@ class GaussianDiffusion:
 
         return (loss_global + loss_local) / 2
 
-    def training_losses(self, model, x_start, t, model_kwargs=None, noise=None):
+    def training_losses(self, model, x_start, t, model_kwargs=None, noise=None, mask=None):
         """
         Compute training losses for a single timestep.
         :param model: the model to evaluate loss on.
@@ -804,13 +806,12 @@ class GaussianDiffusion:
             model_kwargs = {}
         if noise is None:
             noise = th.randn_like(x_start)
-        x_t_ = self.q_sample(x_start, t, noise=noise)
-
-        # Mask
-        mask = th.rand(*x_t_.shape, device=x_t_.device) < self.mask_prob
-        mask[:, 0, :, :, :] = False
-        replacement_noise = th.randn_like(x_t_)
-        x_t = th.where(mask, replacement_noise, x_t_)
+        x_t = self.q_sample(x_start, t, noise=noise)
+        if mask is not None:
+            b, f, c, h, w = x_t.shape
+            # mask[:, 0] = False #TODO: delete this
+            mask = repeat(mask, 'b f -> b f c h w', c=c, h=h, w=w)
+            x_t = th.where(mask, x_t, x_start)
 
         terms = {}
 
@@ -856,13 +857,13 @@ class GaussianDiffusion:
 
             target = {
                 ModelMeanType.PREVIOUS_X: self.q_posterior_mean_variance(
-                    x_start=x_start, x_t=x_t_, t=t
+                    x_start=x_start, x_t=x_t, t=t
                 )[0],
                 ModelMeanType.START_X: x_start,
                 ModelMeanType.EPSILON: noise,
             }[self.model_mean_type]
             assert model_output.shape == target.shape == x_start.shape
-            terms["mse"] = mean_flat((target - model_output) ** 2)
+            terms["mse"] = mean_flat((target - model_output) ** 2, mask)
             
             if self.align_camera:
                 terms["camera"] = self._pose_loss(scene_embed, frame_embed, camera_embed) * 0.1

@@ -42,8 +42,10 @@ def get_models(args):
                         video_length=args.num_frames,
                         efficient_mode=args.enable_xformers_memory_efficient_attention,
                         gradient_checkpointing=args.gradient_checkpointing,
-                        align_camera=args.align_camera)
-        # return LatteT2V.from_pretrained(args.pretrained_model_path, subfolder="transformer", video_length=args.video_length)
+                        align_camera=args.align_camera,
+                        camera_dim=args.camera_dim)
+    elif 'Lat-H' in args.model:
+        return LatteT2V.from_pretrained(args.pretrained_model_path, subfolder="transformer", video_length=args.video_length, low_cpu_mem_usage=False)
     elif 'LaH' in args.model:
         return Latte_models[args.model](
                 input_size=args.latent_size,

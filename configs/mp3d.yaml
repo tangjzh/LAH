@@ -8,7 +8,7 @@ vae: "stabilityai/sd-vae-ft-ema"
 
 # save and load
 results_dir: "./results"
-pretrained: results/090-LaHT-B-2-F8S3-mp3d-Xfor-Gc/checkpoints/0060000.pt
+pretrained: 
 
 # model config: 
 model: LaHT-B/2
@@ -19,9 +19,11 @@ num_layer: 16
 num_attention_heads: 16
 attention_head_dim: 72
 cross_attention_dim: 1152
+camera_dim: 768
 caption_channels: 768
 num_sampling_steps: 1000
 frame_interval: 3
+mask_prob: 0.8
 fixed_spatial: False
 attention_bias: True
 align_camera: False
@@ -29,6 +31,39 @@ align_text: False
 learn_sigma: False
 extras: 78 # [1, 2] 1 unconditional generation, 2 class-conditional generation
 
+# datasets
+datasets:
+  - type: EScanDataset
+    data_path: data/embodiedscan
+    num_frames: 8
+    sample_interval: 2
+    image_size: 256
+    mask_prefix: 3
+    escan_ann_file: data/embodiedscan/embodiedscan_infos_train.pkl
+    escan_vg_file: data/embodiedscan/embodiedscan_train_vg_all.json
+    param:
+      random: True
+  - type: MP3DDataset
+    data_path: data/v1/scans
+    num_frames: 8
+    image_size: 256
+    mask_prob: 0.7
+    param:
+      random: True
+  - type: VLNCEDataset
+    data_path: data/vlnce/processed_rxr
+    num_frames: 8
+    image_size: 256
+    mask_prob: 0.5
+    param:
+      random: True
+  - type: VLNCEDataset
+    data_path: data/vlnce/processed_r2r
+    num_frames: 8
+    image_size: 256
+    mask_prob: 0.5
+    param:
+      random: True
 # train config:
 save_ceph: True # important
 learning_rate: 1e-4

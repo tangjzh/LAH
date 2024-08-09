@@ -146,27 +146,45 @@ class SpaceTimeEmbedder(nn.Module):
                                             num_attention_heads, 
                                             attention_head_dim)
 
+        self.attn3 = GatedSelfAttentionDense(inner_dim, 
+                                            timestamp_dim, 
+                                            num_attention_heads, 
+                                            attention_head_dim)
+
         self.ffn = FeedForward(inner_dim, inner_dim, dropout=dropout)
 
         temp_pos_embed = self.get_1d_sincos_temp_embed(timestamp_dim, video_length)
         self.register_buffer("temp_pos_embed", torch.from_numpy(temp_pos_embed).float().unsqueeze(0), persistent=False)
     
-    def forward(self, hidden_states, camera_pose=None, camera_ray=None, enable_time=False):
-        if camera_pose is not None:
-            camera_emb = self.camera_proj(camera_pose, camera_ray)
-        else:
+    def forward(self, hidden_states, camera_pose, 
+                camera_ray, mask=None, time_mask=None, camera_mask=None):
+
+        camera_emb = self.camera_proj(camera_pose, camera_ray)
+        if camera_mask is not None:
             shape = hidden_states.shape[:-1] + (self.camera_proj.embed_dim,)
-            camera_emb = torch.zeros(shape, device=hidden_states.device, dtype=hidden_states.dtype)
+            camera_emb_ = torch.zeros(shape, device=hidden_states.device, dtype=hidden_states.dtype)
+            # print(camera_mask.shape, camera_emb.shape, camera_emb_.shape)
+            camera_emb = torch.where(camera_mask, camera_emb, camera_emb_)
 
         hidden_states = self.attn1(hidden_states, camera_emb)
 
-        if enable_time:
-            temp_pos_embed = repeat(self.temp_pos_embed, 'b f d -> (repeat b) f d', repeat=hidden_states.shape[0])
-        else:
+        temp_pos_embed = repeat(self.temp_pos_embed, 't f d -> (b t) f d', b=hidden_states.shape[0])
+        if time_mask is not None:
             shape = (hidden_states.shape[0],) + self.temp_pos_embed.shape[1:]
-            temp_pos_embed = torch.zeros(shape, device=hidden_states.device, dtype=hidden_states.dtype)
+            temp_pos_embed_ = torch.zeros(shape, device=hidden_states.device, dtype=hidden_states.dtype)
+            temp_pos_embed = torch.where(time_mask, temp_pos_embed, temp_pos_embed_)
 
         hidden_states = self.attn2(hidden_states, temp_pos_embed)
+
+        if mask is not None:
+            mask = ~mask
+            mask_emb = repeat(mask, 'b f -> (b t) f d', t=hidden_states.shape[0] // mask.shape[0], d=hidden_states.shape[-1]).float()
+            mask_emb.to(hidden_states.dtype)
+        else:
+            mask_emb = torch.zeros_like(hidden_states, dtype=hidden_states.dtype)
+
+        hidden_states = self.attn3(hidden_states, mask_emb)
+
         hidden_states = self.ffn(hidden_states)
 
         return hidden_states
@@ -578,6 +596,7 @@ class LatteT2V(ModelMixin, ConfigMixin):
         self.video_length = video_length
         self.efficient_mode = efficient_mode
         self.align_camera = align_camera
+        self.camera_dim = camera_dim
 
         conv_cls = nn.Conv2d if USE_PEFT_BACKEND else LoRACompatibleConv
         linear_cls = nn.Linear if USE_PEFT_BACKEND else LoRACompatibleLinear
@@ -748,9 +767,6 @@ class LatteT2V(ModelMixin, ConfigMixin):
             inner_dim, camera_dim, inner_dim, video_length=video_length
         )
 
-        if align_camera:
-            self.align_proj = AlignProjection((sample_size // patch_size) ** 2)
-
         # Add a class token
         self.scene_token = nn.Parameter(torch.zeros(1, 1, inner_dim))
 
@@ -768,7 +784,9 @@ class LatteT2V(ModelMixin, ConfigMixin):
         timestep: Optional[torch.LongTensor],
         camera_pose: torch.FloatTensor = None,
         camera_ray: torch.FloatTensor = None,
-        enable_time: bool = False,
+        mask: Optional[torch.Tensor] = None,
+        enable_time: torch.Tensor = None,
+        enable_camera: torch.Tensor = None,
         encoder_hidden_states: Optional[torch.Tensor] = None,
         added_cond_kwargs: Dict[str, torch.Tensor] = None,
         class_labels: Optional[torch.LongTensor] = None,
@@ -893,7 +911,15 @@ class LatteT2V(ModelMixin, ConfigMixin):
 
         # prepare timesteps for spatial and temporal block
         timestep_spatial = repeat(timestep, 'b d -> (b f) d', f=frame + use_image_num).contiguous()
+        # if mask is not None:
+        #     mask = repeat(mask, 'b f -> b f d', d=timestep_spatial.shape[-1])
+        #     timestep_spatial = torch.where(mask, timestep_spatial, 0.)
+
         timestep_temp = repeat(timestep, 'b d -> (b p) d', p=num_patches).contiguous()
+
+        # prepare masks
+        time_mask = repeat(enable_time, 'b -> (b t) f d', t=num_patches, f=frame + use_image_num, d=hidden_states.shape[-1])
+        camera_mask = repeat(enable_camera, 'b -> (b t) f d', t=num_patches, f=frame + use_image_num, d=self.camera_dim)
 
         # prepare scene token
         batch_scene_token = self.scene_token.expand(input_batch_size * num_patches, -1, -1).contiguous() # b * t, 1, d
@@ -921,7 +947,7 @@ class LatteT2V(ModelMixin, ConfigMixin):
                         hidden_states_image = hidden_states[:, frame:, ...]
 
                         if i == 0:
-                            hidden_states_video = self.condition_embedder(hidden_states_video, camera_pose, camera_ray, enable_time)
+                            hidden_states_video = self.condition_embedder(hidden_states_video, camera_pose, camera_ray, mask, time_mask, camera_mask)
                         hidden_states_video = torch.utils.checkpoint.checkpoint(
                             temp_block,
                             hidden_states_video,
@@ -939,7 +965,7 @@ class LatteT2V(ModelMixin, ConfigMixin):
 
                     else:
                         if i == 0:
-                            hidden_states = self.condition_embedder(hidden_states, camera_pose, camera_ray, enable_time)
+                            hidden_states = self.condition_embedder(hidden_states, camera_pose, camera_ray, mask, time_mask, camera_mask)
                             hidden_states = torch.cat([batch_scene_token, hidden_states], dim=1) # b * t, f + 1, d
                         else:
                             hidden_states = torch.cat([global_state, hidden_states], dim=1) # b * t, f + 1, d
@@ -980,7 +1006,7 @@ class LatteT2V(ModelMixin, ConfigMixin):
                         hidden_states_image = hidden_states[:, frame:, ...]
 
                         if i == 0:
-                            hidden_states_video = self.condition_embedder(hidden_states_video, camera_pose, camera_ray, enable_time)
+                            hidden_states_video = self.condition_embedder(hidden_states_video, camera_pose, camera_ray, mask, time_mask, camera_mask)
 
                         hidden_states_video = temp_block(
                             hidden_states_video,
@@ -997,7 +1023,7 @@ class LatteT2V(ModelMixin, ConfigMixin):
 
                     else:
                         if i == 0 and frame > 1:
-                            hidden_states = self.condition_embedder(hidden_states, camera_pose, camera_ray, enable_time)
+                            hidden_states = self.condition_embedder(hidden_states, camera_pose, camera_ray, mask, time_mask, camera_mask)
                             hidden_states = torch.cat([batch_scene_token, hidden_states], dim=1) # b * t, f + 1, d
                         else:
                             hidden_states = torch.cat([global_state, hidden_states], dim=1) # b * t, f + 1, d
@@ -1048,9 +1074,8 @@ class LatteT2V(ModelMixin, ConfigMixin):
 
         if not return_dict:
             global_state = rearrange(global_state, '(b t) f d -> b t f d', b=input_batch_size).contiguous().squeeze(-2)
-            if self.align_camera:
-                local_state = self.align_proj(local_state, embedded_timestep)
             camera_emb = self.condition_embedder.camera_proj(camera_pose, camera_ray)
+            camera_emb = rearrange(camera_emb, '(b t) f d -> b (t f) d', b=input_batch_size)
             # (1, 8, 4, 32, 32) (1, 256, 1408) (1, 10, 256, 1408) (1, 10, 256) (1, 512, 1408)
             return (output, global_state, local_state, camera_emb, encoder_hidden_states)
 
