@@ -47,7 +47,8 @@ def save_frames_as_video(dataset, output_path, fps=1):
     video_writer = cv2.VideoWriter(output_path, fourcc, fps, frame_size)
     
     print("Length", len(dataset))
-    item = dataset[2078]
+    item = dataset[np.random.randint(len(dataset))]
+    print(item['camera_pose'])
 
     frames = item['frames']
     for frame in frames:
@@ -72,7 +73,7 @@ def save_frames_as_video(dataset, output_path, fps=1):
 configs = OmegaConf.load('configs/mp3d.yaml')
 dataset = create_datasets(configs.datasets)
 
-loader = DataLoader(dataset, batch_size=2, shuffle=True)
-for data in loader:
-    print(data)
-# save_frames_as_video(dataset, 'output_video.mp4')
+# loader = DataLoader(dataset, batch_size=2, shuffle=True)
+# for data in loader:
+    # print(data)
+save_frames_as_video(dataset, 'output_video.mp4')

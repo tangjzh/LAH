@@ -112,9 +112,9 @@ class VLNCEDataset(data.Dataset):
         poses, rays = [], []
         # temp = []
         align_matrix = np.array([
-                [0, 1, 0, 0],  # y becomes x
+                [-1, 0, 0, 0],  # x remains x
                 [0, 0, 1, 0],  # z becomes y
-                [1, 0, 0, 0],  # x becomes z
+                [0, -1, 0, 0],  # y becomes z
                 [0, 0, 0, 1]   # homogeneous coordinates remain the same
             ]) + 1e-17
         # align_matrix = np.eye(4)

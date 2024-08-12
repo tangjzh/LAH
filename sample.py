@@ -20,7 +20,7 @@ from models import get_models
 from torchvision.utils import save_image
 from diffusers.models import AutoencoderKL
 from models.clip import TextEmbedder
-from datasets.camera_utils import generate_poses, transform_pose, generate_rays_with_extrinsics
+from datasets.camera_utils import generate_poses, transform_pose, generate_rays_with_extrinsics, visualize_extrinsics
 import imageio
 from transformers import T5EncoderModel, T5Tokenizer
 from torchvision import transforms
@@ -94,17 +94,24 @@ def main(args):
         pose_path = os.path.join(args.data, 'poses', '*.txt')
         images_path, poses_path = sorted(glob.glob(img_path)), sorted(glob.glob(pose_path))
         images, poses, rays = [], [], []
+        temp = []
+        align_matrix = np.array([
+                [-1, 0, 0, 0],  # x remains x
+                [0, 0, 1, 0],  # z becomes y
+                [0, -1, 0, 0],  # y becomes z
+                [0, 0, 0, 1]   # homogeneous coordinates remain the same
+            ]) + 1e-17
 
         reference_pose = None
         for i, (image, pose) in enumerate(zip(images_path, poses_path)):
             image = transform_mp3d(Image.open(image)).to(device, dtype=vae.dtype)
             pose = np.loadtxt(pose).reshape(4, 4)
+            # pose = align_matrix @ pose
             if reference_pose is None:
                 reference_pose = pose
-                transformed_pose = np.hstack((np.eye(3), np.zeros((3, 1))))
-                transformed_pose = np.vstack((transformed_pose, [0, 0, 0, 1]))
-            else:
-                transformed_pose = transform_pose(reference_pose, pose)
+            transformed_pose = transform_pose(reference_pose, pose)
+            transformed_pose[:-1, 3] *= -1
+            temp.append(transformed_pose)
 
             if image is not None:
                 image = vae.encode(image.unsqueeze(0)).latent_dist.sample().mul_(0.18215)
@@ -114,21 +121,23 @@ def main(args):
             ray = generate_rays_with_extrinsics(transformed_pose, args.image_size, args.image_size, noisy=True)
             poses.append(torch.tensor(pose, dtype=torch.float32))
             rays.append(torch.tensor(ray, dtype=torch.float32))
-
+        
+        visualize_extrinsics(temp[:int(args.num_frames)], "vis.jpg", 0.05)
         images = images[:int(args.num_frames)]
         poses = poses[:int(args.num_frames)]
         rays = rays[:int(args.num_frames)]
-        mask = torch.tensor(args.masked).to(dtype=torch.bool, device=device)
+        mask = torch.tensor(args.masked).unsqueeze(0).to(dtype=torch.bool, device=device)
         
         x = torch.stack(
             [img.squeeze() for img in images]
         ).unsqueeze(0).to(dtype=text_encoder.dtype, device=device)
-        x = diffusion.q_sample(x)
+        t = torch.tensor([int(args.num_sampling_steps) - 1] * x.shape[0], device=device)
+        x = diffusion.q_sample(x, t)
 
         c, h, w = x.shape[2:]
         z = torch.randn_like(x)
-        mask = repeat(mask, 'f -> f c h w', c=c, h=h, w=w).unsqueeze(0)
-        z = torch.where(mask, z, x)
+        mask_ = repeat(mask, 'b f -> b f c h w', c=c, h=h, w=w)
+        z = torch.where(mask_, z, x)
 
         camera_pose = torch.stack(poses).unsqueeze(0).to(dtype=text_encoder.dtype, device=device)
         camera_ray = torch.stack(rays).unsqueeze(0).to(dtype=text_encoder.dtype, device=device)
@@ -154,10 +163,15 @@ def main(args):
     prompt_embeds = text_encoder(text_input_ids.to(device), attention_mask=attention_mask).last_hidden_state
     prompt_embeds = prompt_embeds.to(dtype=text_encoder.dtype, device=device)
 
+    enable_time = torch.tensor([False], dtype=torch.bool).to(device)
+    enable_camera = torch.tensor([True], dtype=torch.bool).to(device)
+
     # Setup classifier-free guidance:
     # z = torch.cat([z, z], 0)
     sample_fn = model.forward
-    model_kwargs = dict(camera_pose=camera_pose, camera_ray=camera_ray, encoder_hidden_states=prompt_embeds)
+    model_kwargs = dict(camera_pose=camera_pose, camera_ray=camera_ray, 
+                        encoder_hidden_states=prompt_embeds, mask=mask,
+                        enable_time=enable_time, enable_camera=enable_camera)
 
     # Sample images:
     if args.sample_method == 'ddim':

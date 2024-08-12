@@ -30,22 +30,36 @@ def get_lr_scheduler(optimizer, name, **kwargs):
 def get_models(args):
     if 'LaHT' in args.model:
         # TODO: use community weights
-        return LatteT2V(num_attention_heads=args.num_attention_heads, 
+        return LatteT2V(num_attention_heads=args.num_attention_heads,
                         attention_head_dim=args.attention_head_dim,
-                        in_channels=4,
+                        in_channels=args.in_channels,
+                        out_channels=args.out_channels,
                         patch_size=args.patch_size,
-                        sample_size=32,
+                        sample_size=args.sample_size,
                         caption_channels=args.caption_channels,
                         cross_attention_dim=args.cross_attention_dim,
-                        norm_type='ada_norm_single',
+                        norm_type=args.norm_type,
                         num_layers=args.num_layer,
                         video_length=args.num_frames,
                         efficient_mode=args.enable_xformers_memory_efficient_attention,
                         gradient_checkpointing=args.gradient_checkpointing,
                         align_camera=args.align_camera,
-                        camera_dim=args.camera_dim)
+                        camera_dim=args.camera_dim,
+                        attention_bias=args.attention_bias,
+                        double_self_attention=args.double_self_attention,
+                        activation_fn=args.activation_fn,
+                        attention_type=args.attention_type,
+                        dropout=args.dropout,
+                        norm_elementwise_affine=args.norm_elementwise_affine,
+                        norm_eps=args.norm_eps,
+                        norm_num_groups=args.norm_num_groups,
+                        num_embeds_ada_norm=args.num_embeds_ada_norm,
+                        num_vector_embeds=args.num_vector_embeds,
+                        only_cross_attention=args.only_cross_attention,
+                        upcast_attention=args.upcast_attention,
+                        use_linear_projection=args.use_linear_projection)
     elif 'Lat-H' in args.model:
-        return LatteT2V.from_pretrained(args.pretrained_model_path, subfolder="transformer", video_length=args.video_length, low_cpu_mem_usage=False)
+        return LatteT2V.from_pretrained(args.pretrained_model_path, subfolder="transformer", video_length=args.num_frames, low_cpu_mem_usage=False, ignore_mismatched_sizes=True)
     elif 'LaH' in args.model:
         return Latte_models[args.model](
                 input_size=args.latent_size,

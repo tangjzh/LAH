@@ -309,6 +309,8 @@ def main(args):
                         # "args": args
                     }
                     checkpoint_path = f"{checkpoint_dir}/{train_steps:07d}.pt"
+                    pretrained_path = f"{checkpoint_dir}/transformer"
+                    model.save_pretrained(pretrained_path)
                     torch.save(checkpoint, checkpoint_path)
                     logger.info(f"Saved checkpoint to {checkpoint_path}")
                 dist.barrier()

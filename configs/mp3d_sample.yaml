@@ -2,28 +2,46 @@
 ckpt: # will be overwrite
 save_img_path: "./sample_videos/" # will be overwrite
 data: # will be overwrite
-masked: [1, 1, 1, 1, 1, 1, 1, 1]
+masked: [0, 1, 1, 1, 1, 1, 1, 1]
 pretrained_model_path: "checkpoints/Latte/"
 text_encoder: "google/flan-t5-base"
 vae: "stabilityai/sd-vae-ft-ema"
 
+image_size: 256 # choices=[256, 512]
+frame_interval: 3
+fixed_spatial: False
+learn_sigma: False
+
 # model config: 
 model: LaHT-B/2
 num_frames: 8
-image_size: 256 # choices=[256, 512]
 patch_size: 2
 num_layer: 16
 num_attention_heads: 16
 attention_head_dim: 72
 cross_attention_dim: 1152
-camera_dim: 768
+camera_dim: 256
 caption_channels: 768
-frame_interval: 3
-fixed_spatial: False
 attention_bias: True
+attention_type: default
+in_channels: 4
+out_channels: 4
+sample_size: 32
+double_self_attention: False
+activation_fn: gelu-approximate
+dropout: 0.0
+norm_elementwise_affine: False
+norm_eps: 1e-06
+norm_num_groups: 32
+norm_type: ada_norm_single
+num_embeds_ada_norm: 1000
+num_vector_embeds: null
+only_cross_attention: False
+upcast_attention: False
+use_linear_projection: False
 align_camera: False
 align_text: False
-learn_sigma: True
+
 extras: 78 # [1, 2] 1 unconditional generation, 2 class-conditional generation
 num_classes:
 
