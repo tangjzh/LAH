@@ -80,7 +80,7 @@ def main(args):
         transforms.ToTensor(),
         transforms.Resize(args.image_size),
         transforms.CenterCrop(args.image_size),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True)
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
     # Create sampling noise:
@@ -106,7 +106,7 @@ def main(args):
         for i, (image, pose) in enumerate(zip(images_path, poses_path)):
             image = transform_mp3d(Image.open(image)).to(device, dtype=vae.dtype)
             pose = np.loadtxt(pose).reshape(4, 4)
-            # pose = align_matrix @ pose
+            pose = align_matrix @ pose
             if reference_pose is None:
                 reference_pose = pose
             transformed_pose = transform_pose(reference_pose, pose)

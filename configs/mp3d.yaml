@@ -2,7 +2,7 @@
 dataset: "mp3d"
 
 data_path: "data/v1/scans"
-pretrained_model_path: "checkpoints/Latte-1/"
+pretrained_model_path: "results/151-Lat-H-B-2-F8S3-mp3d-Xfor-Gc/checkpoints/"
 text_encoder: "google/flan-t5-base"
 vae: "stabilityai/sd-vae-ft-ema"
 
@@ -15,7 +15,7 @@ model: Lat-H-B/2
 num_frames: 8
 image_size: 256 # choices=[256, 512]
 patch_size: 2
-num_layer: 16
+num_layer: 18
 num_attention_heads: 16
 attention_head_dim: 72
 cross_attention_dim: 1152
@@ -67,7 +67,7 @@ datasets:
 # train config:
 save_ceph: True # important
 learning_rate: 1e-4
-ckpt_every: 5000
+ckpt_every: 10000
 clip_max_norm: 0.1
 start_clip_iter: 20000
 local_batch_size: 2 # important

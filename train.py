@@ -102,7 +102,7 @@ def main(args):
     text_encoder = T5EncoderModel.from_pretrained(args.text_encoder).to(device)
 
     # # use pretrained model?
-    if args.pretrained:
+    if args.pretrained and args.pretrained_model_path is None:
         checkpoint = torch.load(args.pretrained, map_location=lambda storage, loc: storage)
         if "ema" in checkpoint:  # supports checkpoints from train.py
             logger.info('Using ema ckpt!')
@@ -184,15 +184,16 @@ def main(args):
     num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
 
     # Potentially load in the weights and states from a previous save
-    if args.resume_from_checkpoint:
+    if args.pretrained_model_path:
         # TODO, need to checkout
         # Get the most recent checkpoint
-        dirs = os.listdir(os.path.join(experiment_dir, 'checkpoints'))
+        dirs = os.listdir(args.pretrained_model_path)
         dirs = [d for d in dirs if d.endswith("pt")]
         dirs = sorted(dirs, key=lambda x: int(x.split(".")[0]))
         path = dirs[-1]
-        logger.info(f"Resuming from checkpoint {path}")
-        model.load_state(os.path.join(dirs, path))
+        # if args.pretrained_model_path is None:
+        #     logger.info(f"Resuming from checkpoint {path}")
+        #     model.load_state(os.path.join(dirs, path))
         train_steps = int(path.split(".")[0])
 
         first_epoch = train_steps // num_update_steps_per_epoch
@@ -310,7 +311,7 @@ def main(args):
                     }
                     checkpoint_path = f"{checkpoint_dir}/{train_steps:07d}.pt"
                     pretrained_path = f"{checkpoint_dir}/transformer"
-                    model.save_pretrained(pretrained_path)
+                    model.module.save_pretrained(pretrained_path)
                     torch.save(checkpoint, checkpoint_path)
                     logger.info(f"Saved checkpoint to {checkpoint_path}")
                 dist.barrier()

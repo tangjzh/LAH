@@ -2,7 +2,7 @@
 ckpt: # will be overwrite
 save_img_path: "./sample_videos/" # will be overwrite
 data: # will be overwrite
-masked: [0, 1, 1, 1, 1, 1, 1, 1]
+masked: [0, 1, 1, 0, 1, 1, 0, 1]
 pretrained_model_path: "checkpoints/Latte/"
 text_encoder: "google/flan-t5-base"
 vae: "stabilityai/sd-vae-ft-ema"
@@ -16,7 +16,7 @@ learn_sigma: False
 model: LaHT-B/2
 num_frames: 8
 patch_size: 2
-num_layer: 16
+num_layer: 18
 num_attention_heads: 16
 attention_head_dim: 72
 cross_attention_dim: 1152
@@ -54,7 +54,7 @@ gradient_checkpointing: False
 # sample config:
 seed:
 sample_method: 'ddim'
-num_sampling_steps: 1000
+num_sampling_steps: 200
 cfg_scale: 1.0
 run_time: 12
 num_sample: 1

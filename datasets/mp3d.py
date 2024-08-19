@@ -104,7 +104,7 @@ class MP3DDataset(data.Dataset):
 
     def load_camera_pose(self, pose_paths):
         poses, rays = [], []
-        temp = []
+        # temp = []
         reference_pose = None
         for pose_path in pose_paths:
             zip_file_path, internal_path = pose_path.split('//', 1)
@@ -118,10 +118,10 @@ class MP3DDataset(data.Dataset):
 
                 pose = transformed_pose[:-1, 3].flatten()
                 ray = generate_rays_with_extrinsics(transformed_pose, width=self.img_size, height=self.img_size)
-                temp.append(transformed_pose)
+                # temp.append(transformed_pose)
                 poses.append(torch.tensor(pose, dtype=torch.float32))
                 rays.append(torch.tensor(ray, dtype=torch.float32))
-        visualize_extrinsics(temp, './vis.jpg', 0.002)
+        # visualize_extrinsics(temp, './vis.jpg', 0.002)
         if self.return_pt:
             poses = torch.stack(poses)
             rays = torch.stack(rays)
