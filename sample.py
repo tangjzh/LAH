@@ -163,8 +163,8 @@ def main(args):
     prompt_embeds = text_encoder(text_input_ids.to(device), attention_mask=attention_mask).last_hidden_state
     prompt_embeds = prompt_embeds.to(dtype=text_encoder.dtype, device=device)
 
-    enable_time = torch.tensor([False], dtype=torch.bool).to(device)
-    enable_camera = torch.tensor([True], dtype=torch.bool).to(device)
+    enable_time = torch.tensor([args.enable_time], dtype=torch.bool).to(device)
+    enable_camera = torch.tensor([args.enable_camera], dtype=torch.bool).to(device)
 
     # Setup classifier-free guidance:
     # z = torch.cat([z, z], 0)

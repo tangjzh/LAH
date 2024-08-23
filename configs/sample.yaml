@@ -8,6 +8,9 @@ tokenizer: "checkpoints/Latte-1/tokenizer"
 text_encoder: "checkpoints/Latte-1/text_encoder"
 vae: "checkpoints/Latte-1/vae"
 
+enable_time: True
+enable_camera: False
+
 image_size: 256 # choices=[256, 512]
 frame_interval: 3
 fixed_spatial: False
