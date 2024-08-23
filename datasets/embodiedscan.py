@@ -15,7 +15,8 @@ class EScanDataset(data.Dataset):
                  configs,
                  transform=None,
                  random=True,
-                 return_pt=True):
+                 return_pt=True,
+                 enable_time=True, enable_camera=False, enable_desc=True, **kwargs):
         self.configs = configs
         self.data_root = configs.data_path
         self.video_length = configs.num_frames
@@ -28,6 +29,10 @@ class EScanDataset(data.Dataset):
         self.random = random
         self.return_pt = return_pt
 
+        self.enable_time = enable_time
+        self.enable_camera = enable_camera
+        self.enable_desc = enable_desc
+
         self.data_all = self.load_data()
 
     def __getitem__(self, index):
@@ -35,13 +40,22 @@ class EScanDataset(data.Dataset):
         
         frames = self.load_images(item['img_path'])
         camera_pose, rays = self.load_camera_pose(item['extrinsic'])
-        prompt = item['text']
-        mask = np.zeros(self.video_length, dtype=int)
-        if self.random:
-            mask[:np.random.randint(1, self.mask_prefix)] = 1
+        prompt = item['text'] if self.enable_desc else ""
+        if self.enable_time:
+            mask = np.zeros(self.video_length, dtype=int)
+            if self.random:
+                mask[:np.random.randint(1, self.mask_prefix)] = 1
+            else:
+                mask[:self.mask_prefix] = 1
+            mask = ~torch.tensor(mask, dtype=torch.bool)
         else:
-            mask[:self.mask_prefix] = 1
-        mask = ~torch.tensor(mask, dtype=torch.bool)
+            mask = torch.tensor(np.random.rand(self.video_length) < self.mask_prob, dtype=torch.bool)
+            if torch.all(~mask):
+                unmask_index = random.randint(0, self.video_length - 1)
+                mask[unmask_index] = True
+            if torch.all(mask):
+                mask_index = random.randint(0, self.video_length - 1)
+                mask[mask_index] = False
 
         return {
             'frames': frames,
@@ -49,8 +63,8 @@ class EScanDataset(data.Dataset):
             'ray': rays,
             'mask': mask,
             'prompt': prompt,
-            'enable_time': True,
-            'enable_camera': False,
+            'enable_time': self.enable_time,
+            'enable_camera': self.enable_camera,
         }
 
     def __len__(self):
@@ -70,16 +84,27 @@ class EScanDataset(data.Dataset):
     def load_camera_pose(self, extrinsics):
         poses, rays = [], []
         reference_pose = None
+        # temp = []
+        align_matrix = np.array([
+                [0, 0, 1, 0],  # x becomes z
+                [0, 1, 0, 0],  # y remains y
+                [1, 0, 0, 0],  # z becomes x
+                [0, 0, 0, 1]   # homogeneous coordinates remain the same
+            ]) + 1e-17
 
         for extrinsic in extrinsics:
+            extrinsic = align_matrix @ extrinsic
             if reference_pose is None:
                 reference_pose = extrinsic
             transformed_pose = transform_pose(reference_pose, extrinsic)
-            
+            transformed_pose[:-1, 3] *= -1
+            # temp.append(transformed_pose)
+
             pose = transformed_pose[:-1, 3].flatten()
             ray = generate_rays_with_extrinsics(transformed_pose, width=self.img_size, height=self.img_size)
             poses.append(torch.tensor(pose, dtype=torch.float32))
             rays.append(torch.tensor(ray, dtype=torch.float32))
+        # visualize_extrinsics(temp, 'vis.jpg')
         
         if self.return_pt:
             poses = torch.stack(poses)

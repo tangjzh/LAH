@@ -2,7 +2,7 @@
 dataset: "mp3d"
 
 data_path: "data/v1/scans"
-pretrained_model_path: "results/020-Lat-H-B-2-F8S3-mp3d-Xfor-Gc/checkpoints"
+pretrained_model_path: "checkpoints/Latte-1"
 tokenizer: "checkpoints/Latte-1/tokenizer"
 text_encoder: "checkpoints/Latte-1/text_encoder"
 vae: "checkpoints/Latte-1/vae"
@@ -35,58 +35,63 @@ extras: 78 # [1, 2] 1 unconditional generation, 2 class-conditional generation
 # datasets
 shuffle: False
 datasets:
-  # - type: EScanDataset
-  #   data_path: data/embodiedscan
-  #   num_frames: 8
-  #   sample_interval: 2
-  #   image_size: 256
-  #   mask_prefix: 3
-  #   escan_ann_file: data/embodiedscan/embodiedscan_infos_train.pkl
-  #   escan_vg_file: data/embodiedscan/embodiedscan_train_vg_all.json
-  #   param:
-  #     random: True
-  # - type: MP3DDataset
-  #   data_path: data/v1/scans
-  #   num_frames: 8
-  #   image_size: 256
-  #   mask_prob: 0.7
-  #   param:
-  #     random: True
-  # - type: VLNCEDataset
-  #   data_path: data/vlnce/processed_rxr
-  #   num_frames: 8
-  #   image_size: 256
-  #   mask_prob: 0.5
-  #   param:
-  #     random: True
-  - type: VLNCEDataset
-    repeat: 3
-    data_path: data/vlnce/processed_r2r
+  - type: EScanDataset
+    data_path: data/embodiedscan
+    repeat: 1
     num_frames: 8
+    sample_interval: 2
     image_size: 256
-    mask_prob: 0.75
     mask_prefix: 3
+    escan_ann_file: data/embodiedscan/embodiedscan_infos_train.pkl
+    escan_vg_file: data/embodiedscan/embodiedscan_train_vg_all.json
     param:
       random: True
       enable_time: True
       enable_camera: False
       enable_desc: False
   - type: VLNCEDataset
-    repeat: 2
+    repeat: 15
     data_path: data/vlnce/processed_r2r
+    num_frames: 8
+    image_size: 256
+    mask_prob: 0.25
+    mask_prefix: 3
+    param:
+      random: True
+      enable_time: False
+      enable_camera: True
+      enable_desc: False
+  - type: EScanDataset
+    data_path: data/embodiedscan
+    repeat: 1
+    num_frames: 8
+    sample_interval: 2
+    image_size: 256
+    mask_prefix: 3
+    mask_prob: 0.5
+    escan_ann_file: data/embodiedscan/embodiedscan_infos_train.pkl
+    escan_vg_file: data/embodiedscan/embodiedscan_train_vg_all.json
+    param:
+      random: True
+      enable_time: False
+      enable_camera: True
+      enable_desc: False
+  - type: VLNCEDataset
+    repeat: 3
+    data_path: data/vlnce/processed_rxr
     num_frames: 8
     image_size: 256
     mask_prob: 0.75
     mask_prefix: 3
     param:
       random: True
-      enable_time: True
+      enable_time: False
       enable_camera: True
       enable_desc: False
   - type: MixedDataset
     datasets:
       - type: VLNCEDataset
-        repeat: 1
+        repeat: 10
         data_path: data/vlnce/processed_r2r
         num_frames: 8
         image_size: 256
@@ -94,23 +99,26 @@ datasets:
         mask_prefix: 3
         param:
           random: True
-          enable_time: False
-          enable_camera: True
-          enable_desc: False
-      - type: VLNCEDataset
+          enable_time: True
+          enable_camera: False
+          enable_desc: True
+      - type: EScanDataset
+        data_path: data/embodiedscan
         repeat: 1
-        data_path: data/vlnce/processed_rxr
         num_frames: 8
+        sample_interval: 2
         image_size: 256
-        mask_prob: 0.5
         mask_prefix: 3
+        mask_prob: 0.5
+        escan_ann_file: data/embodiedscan/embodiedscan_infos_train.pkl
+        escan_vg_file: data/embodiedscan/embodiedscan_train_vg_all.json
         param:
           random: True
-          enable_time: False
-          enable_camera: True
-          enable_desc: False
+          enable_time: True
+          enable_camera: False
+          enable_desc: True
   - type: VLNCEDataset
-    repeat: 1
+    repeat: 3
     data_path: data/vlnce/processed_r2r
     num_frames: 8
     image_size: 256

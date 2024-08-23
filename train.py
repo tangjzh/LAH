@@ -24,7 +24,7 @@ from time import time
 from copy import deepcopy
 from einops import rearrange
 from models import get_models
-from datasets import get_dataset
+from datasets import get_dataset, get_sampler
 from models.clip import TextEmbedder
 from diffusion import create_diffusion
 from omegaconf import OmegaConf
@@ -98,7 +98,7 @@ def main(args):
                                  diffusion_steps=args.num_sampling_steps)  # default: 1000 steps, linear noise schedule
     # vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-ema").to(device)
     vae = AutoencoderKL.from_pretrained(args.vae).to(device)
-    tokenizer = T5Tokenizer.from_pretrained(args.text_encoder)
+    tokenizer = T5Tokenizer.from_pretrained(args.tokenizer)
     text_encoder = T5EncoderModel.from_pretrained(args.text_encoder).to(device)
 
     # # use pretrained model?
@@ -138,13 +138,21 @@ def main(args):
     text_encoder.requires_grad_(False)
 
     # Setup data:
-    dataset = get_dataset(args)
+    dataset, shuffle_datasets = get_dataset(args)
 
-    sampler = DistributedSampler(
+    # sampler = DistributedSampler(
+    #     dataset,
+    #     num_replicas=dist.get_world_size(),
+    #     rank=rank,
+    #     shuffle=args.shuffle,
+    #     seed=args.global_seed
+    # )
+    sampler = get_sampler(
         dataset,
+        shuffle_datasets=shuffle_datasets,
         num_replicas=dist.get_world_size(),
         rank=rank,
-        shuffle=True,
+        shuffle=args.shuffle,
         seed=args.global_seed
     )
     loader = DataLoader(
@@ -187,17 +195,20 @@ def main(args):
     if args.pretrained_model_path:
         # TODO, need to checkout
         # Get the most recent checkpoint
-        dirs = os.listdir(args.pretrained_model_path)
-        dirs = [d for d in dirs if d.endswith("pt")]
-        dirs = sorted(dirs, key=lambda x: int(x.split(".")[0]))
-        path = dirs[-1]
-        # if args.pretrained_model_path is None:
-        #     logger.info(f"Resuming from checkpoint {path}")
-        #     model.load_state(os.path.join(dirs, path))
-        train_steps = int(path.split(".")[0])
+        try:
+            dirs = os.listdir(args.pretrained_model_path)
+            dirs = [d for d in dirs if d.endswith("pt")]
+            dirs = sorted(dirs, key=lambda x: int(x.split(".")[0]))
+            path = dirs[-1]
+            # if args.pretrained_model_path is None:
+            #     logger.info(f"Resuming from checkpoint {path}")
+            #     model.load_state(os.path.join(dirs, path))
+            train_steps = int(path.split(".")[0])
 
-        first_epoch = train_steps // num_update_steps_per_epoch
-        resume_step = train_steps % num_update_steps_per_epoch
+            first_epoch = train_steps // num_update_steps_per_epoch
+            resume_step = train_steps % num_update_steps_per_epoch
+        except:
+            logger.info(f'Loading pretrained model from {args.pretrained_model_path}')
 
     if args.pretrained:
         train_steps = int(args.pretrained.split("/")[-1].split('.')[0])
@@ -326,6 +337,6 @@ def main(args):
 if __name__ == "__main__":
     # Default args here will train Latte with the hyperparameters we used in our paper (except training iters).
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, default="./configs/mp3d.yaml")
+    parser.add_argument("--config", type=str, default="./configs/vlnce.yaml")
     args = parser.parse_args()
     main(OmegaConf.load(args.config))

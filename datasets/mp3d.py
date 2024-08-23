@@ -15,8 +15,9 @@ class MP3DDataset(data.Dataset):
                  configs,
                  transform=None,
                  random=True,
-                 enable_desc=False,
-                 return_pt=True):
+                 enable_desc=True,
+                 return_pt=True,
+                 enable_time=False, enable_camera=True, **kwargs):
         self.configs = configs
         self.data_root = configs.data_path
         self.video_length = configs.num_frames
@@ -26,6 +27,8 @@ class MP3DDataset(data.Dataset):
         self.random = random
         self.return_pt = return_pt
         self.enable_desc = enable_desc
+        self.enable_time = enable_time
+        self.enable_camera = enable_camera
 
         self.data_all = self.load_data(self.data_root)
 
@@ -42,11 +45,14 @@ class MP3DDataset(data.Dataset):
         
         frames = self.load_images(selected_color_image_paths)
         camera_pose, rays = self.load_camera_pose(selected_pose_paths)
-        prompt = self.load_text_descriptions(item['text_paths'])
-        mask = torch.tensor(np.random.rand(self.video_length) < self.mask_prob)
+        prompt = self.load_text_descriptions(item['text_paths']) if self.enable_desc else ""
+        mask = torch.tensor(np.random.rand(self.video_length) < self.mask_prob, dtype=torch.bool)
         if torch.all(~mask):
             unmask_index = random.randint(0, self.video_length - 1)
             mask[unmask_index] = True
+        if torch.all(mask):
+            mask_index = random.randint(0, self.video_length - 1)
+            mask[mask_index] = False
 
         return {
             'frames': frames,
@@ -54,8 +60,8 @@ class MP3DDataset(data.Dataset):
             'ray': rays,
             'mask': mask,
             'prompt': prompt,
-            'enable_time': False,
-            'enable_camera': True,
+            'enable_time': self.enable_time,
+            'enable_camera': self.enable_camera,
         }
 
     def __len__(self):
@@ -128,13 +134,13 @@ class MP3DDataset(data.Dataset):
         return poses, rays
 
     def load_text_descriptions(self, text_paths):
-        if self.enable_desc:
-            descriptions = ""
-            for path in text_paths:
-                # degree = path.split('_')[-1].split('.')[0]
-                with open(path, 'r') as f:
-                    descriptions += f.read() + ". "
-            return descriptions.strip()
-        else:
-            instruction = "Observe the surroundings while staying in place."
-            return instruction
+        # if self.enable_desc:
+        #     descriptions = ""
+        #     for path in text_paths:
+        #         # degree = path.split('_')[-1].split('.')[0]
+        #         with open(path, 'r') as f:
+        #             descriptions += f.read() + ". "
+        #     return descriptions.strip()
+        # else:
+        instruction = "Observe the surroundings while staying in place."
+        return instruction

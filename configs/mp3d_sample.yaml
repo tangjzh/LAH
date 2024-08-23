@@ -2,10 +2,11 @@
 ckpt: # will be overwrite
 save_img_path: "./sample_videos/" # will be overwrite
 data: # will be overwrite
-masked: [0, 1, 1, 0, 1, 1, 0, 1]
+masked: [0, 0, 0, 0, 0, 0, 1, 1]
 pretrained_model_path: "checkpoints/Latte/"
-text_encoder: "google/flan-t5-base"
-vae: "stabilityai/sd-vae-ft-ema"
+tokenizer: "checkpoints/Latte-1/tokenizer"
+text_encoder: "checkpoints/Latte-1/text_encoder"
+vae: "checkpoints/Latte-1/vae"
 
 image_size: 256 # choices=[256, 512]
 frame_interval: 3
@@ -16,12 +17,12 @@ learn_sigma: False
 model: LaHT-B/2
 num_frames: 8
 patch_size: 2
-num_layer: 18
+num_layer: 28
 num_attention_heads: 16
 attention_head_dim: 72
 cross_attention_dim: 1152
 camera_dim: 256
-caption_channels: 768
+caption_channels: 4096
 attention_bias: True
 attention_type: default
 in_channels: 4

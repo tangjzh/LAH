@@ -9,7 +9,8 @@ from .camera_utils import transform_pose, generate_rays_with_extrinsics, visuali
 from glob import glob
 
 class VLNCEDataset(data.Dataset):
-    def __init__(self, configs, transform=None, return_pt=True, **kwargs):
+    def __init__(self, configs, transform=None, return_pt=True, random=True, 
+                 enable_time=True, enable_camera=True, enable_desc=True, **kwargs):
         self.configs = configs
         self.data_root = configs.data_path
         self.video_length = configs.num_frames
@@ -17,6 +18,11 @@ class VLNCEDataset(data.Dataset):
         self.mask_prob = configs.mask_prob
         self.transform = transform
         self.return_pt = return_pt
+        self.mask_prefix = configs.mask_prefix
+        self.random = random
+        self.enable_time = enable_time
+        self.enable_camera = enable_camera
+        self.enable_desc = enable_desc
 
         self.data_all = self.load_data(self.data_root)
 
@@ -28,11 +34,23 @@ class VLNCEDataset(data.Dataset):
 
         frames = self.load_images(item['image_paths'])
         camera_pose, rays = self.load_poses_and_rays(item['pose_paths'])
-        prompt = item['prompt']
-        mask = torch.tensor(np.random.rand(self.video_length) < self.mask_prob, dtype=torch.bool)
-        if torch.all(~mask):
-            unmask_index = random.randint(0, self.video_length - 1)
-            mask[unmask_index] = True
+        prompt = item['prompt'] if self.enable_desc else ""
+        
+        if self.enable_time:
+            mask = np.zeros(self.video_length, dtype=int)
+            if self.random:
+                mask[:np.random.randint(1, self.mask_prefix)] = 1
+            else:
+                mask[:self.mask_prefix] = 1
+            mask = ~torch.tensor(mask, dtype=torch.bool)
+        else:
+            mask = torch.tensor(np.random.rand(self.video_length) < self.mask_prob, dtype=torch.bool)
+            if torch.all(~mask):
+                unmask_index = random.randint(0, self.video_length - 1)
+                mask[unmask_index] = True
+            if torch.all(mask):
+                mask_index = random.randint(0, self.video_length - 1)
+                mask[mask_index] = False
 
         return {
             'frames': frames,
@@ -40,8 +58,8 @@ class VLNCEDataset(data.Dataset):
             'ray': rays,
             'mask': mask,
             'prompt': prompt,
-            'enable_time': True,
-            'enable_camera': True,
+            'enable_time': self.enable_time,
+            'enable_camera': self.enable_camera,
         }
 
     def load_data(self, root_dir):

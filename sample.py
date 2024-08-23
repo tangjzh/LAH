@@ -62,7 +62,7 @@ def main(args):
     # vae = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-{args.vae}").to(device)
     vae = AutoencoderKL.from_pretrained(args.vae).to(device)
     # text_encoder = TextEmbedder().to(device)
-    tokenizer = T5Tokenizer.from_pretrained(args.text_encoder)
+    tokenizer = T5Tokenizer.from_pretrained(args.tokenizer)
     text_encoder = T5EncoderModel.from_pretrained(args.text_encoder).to(device)
 
     vae.eval()
