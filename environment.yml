@@ -6,7 +6,7 @@ dependencies:
   - python >= 3.10
   - pytorch > 2.0.0
   - torchvision
-  - pytorch-cuda=11.7
+  - cuda-toolkit
   - pip:
     - timm
     - diffusers[torch]==0.24.0
@@ -23,3 +23,6 @@ dependencies:
     - beautifulsoup4
     - ftfy
     - omegaconf
+    - opencv-python
+    - matplotlib
+    - xformers
