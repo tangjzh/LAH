@@ -17,7 +17,7 @@ class MP3DDataset(data.Dataset):
                  random=True,
                  enable_desc=True,
                  return_pt=True,
-                 enable_time=False, enable_camera=True, **kwargs):
+                 enable_camera=True, **kwargs):
         self.configs = configs
         self.data_root = configs.data_path
         self.video_length = configs.num_frames
@@ -27,7 +27,6 @@ class MP3DDataset(data.Dataset):
         self.random = random
         self.return_pt = return_pt
         self.enable_desc = enable_desc
-        self.enable_time = enable_time
         self.enable_camera = enable_camera
 
         self.data_all = self.load_data(self.data_root)
@@ -60,7 +59,7 @@ class MP3DDataset(data.Dataset):
             'ray': rays,
             'mask': mask,
             'prompt': prompt,
-            'enable_time': self.enable_time,
+            'enable_time': False,
             'enable_camera': self.enable_camera,
         }
 
