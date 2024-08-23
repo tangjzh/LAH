@@ -23,6 +23,7 @@ class EScanDataset(data.Dataset):
         self.sample_interval = configs.sample_interval
         self.img_size = configs.image_size
         self.mask_prefix = configs.mask_prefix
+        self.mask_prob = configs.mask_prob
         self.ann_file = configs.escan_ann_file
         self.vg_file = configs.escan_vg_file
         self.transform = transform

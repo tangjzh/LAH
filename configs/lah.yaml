@@ -35,20 +35,47 @@ extras: 78 # [1, 2] 1 unconditional generation, 2 class-conditional generation
 # datasets
 shuffle: False
 datasets:
-  - type: EScanDataset
-    data_path: data/embodiedscan
-    repeat: 1
-    num_frames: 8
-    sample_interval: 2
-    image_size: 256
-    mask_prefix: 3
-    escan_ann_file: data/embodiedscan/embodiedscan_infos_train.pkl
-    escan_vg_file: data/embodiedscan/embodiedscan_train_vg_all.json
-    param:
-      random: True
-      enable_time: True
-      enable_camera: False
-      enable_desc: False
+  - type: MixedDataset
+    datasets:
+    - type: EScanDataset
+      data_path: data/embodiedscan
+      repeat: 1
+      num_frames: 8
+      sample_interval: 2
+      image_size: 256
+      mask_prefix: 6
+      mask_prob: 0.25
+      escan_ann_file: data/embodiedscan/embodiedscan_infos_train.pkl
+      escan_vg_file: data/embodiedscan/embodiedscan_train_vg_all.json
+      param:
+        random: True
+        enable_time: True
+        enable_camera: False
+        enable_desc: False
+    - type: VLNCEDataset
+      repeat: 10
+      data_path: data/vlnce/processed_r2r
+      num_frames: 8
+      image_size: 256
+      mask_prob: 0.25
+      mask_prefix: 3
+      param:
+        random: True
+        enable_time: True
+        enable_camera: False
+        enable_desc: False
+    - type: VLNCEDataset
+      repeat: 3
+      data_path: data/vlnce/processed_rxr
+      num_frames: 8
+      image_size: 256
+      mask_prob: 0.25
+      mask_prefix: 5
+      param:
+        random: True
+        enable_time: True
+        enable_camera: False
+        enable_desc: False
   - type: VLNCEDataset
     repeat: 15
     data_path: data/vlnce/processed_r2r
