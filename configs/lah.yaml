@@ -46,7 +46,7 @@ datasets:
       mask_prefix: 6
       mask_prob: 0.25
       escan_ann_file: data/embodiedscan/embodiedscan_infos_train.pkl
-      escan_vg_file: data/embodiedscan/embodiedscan_train_vg_all.json
+      escan_vg_file: data/embodiedscan/embodiedscan_train_mini_vg.json
       param:
         random: True
         enable_time: True
@@ -76,6 +76,18 @@ datasets:
         enable_time: True
         enable_camera: False
         enable_desc: False
+    - type: VLNCEDataset
+      repeat: 5
+      data_path: data/vlnce/processed_rxr
+      num_frames: 8
+      image_size: 256
+      mask_prob: 0.25
+      mask_prefix: 4
+      param:
+        random: True
+        enable_time: True
+        enable_camera: False
+        enable_desc: False
   - type: VLNCEDataset
     repeat: 15
     data_path: data/vlnce/processed_r2r
@@ -97,7 +109,7 @@ datasets:
     mask_prefix: 3
     mask_prob: 0.5
     escan_ann_file: data/embodiedscan/embodiedscan_infos_train.pkl
-    escan_vg_file: data/embodiedscan/embodiedscan_train_vg_all.json
+    escan_vg_file: data/embodiedscan/embodiedscan_train_mini_vg.json
     param:
       random: True
       enable_time: False
@@ -138,14 +150,14 @@ datasets:
         mask_prefix: 3
         mask_prob: 0.5
         escan_ann_file: data/embodiedscan/embodiedscan_infos_train.pkl
-        escan_vg_file: data/embodiedscan/embodiedscan_train_vg_all.json
+        escan_vg_file: data/embodiedscan/embodiedscan_train_mini_vg.json
         param:
           random: True
           enable_time: True
           enable_camera: False
           enable_desc: True
   - type: VLNCEDataset
-    repeat: 3
+    repeat: 10
     data_path: data/vlnce/processed_r2r
     num_frames: 8
     image_size: 256

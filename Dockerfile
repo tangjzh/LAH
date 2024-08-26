@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM continuumio/miniconda3
 
 RUN apt update
 RUN apt install -y nginx vim git
@@ -11,11 +11,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
+RUN conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/free/
+
+RUN conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/
+RUN conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/pytorch/
+RUN conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/
 COPY environment.yml .
 RUN conda env create -f environment.yml
 
-ENTRYPOINT ["/bin/bash"]
-
 # EXPOSE 8000
 
-# CMD ["sh", "train.sh"]
+SHELL ["conda", "run", "-n", "lah", "/bin/bash", "-c"]
+
+ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "lah"]
+
+# CMD ["conda", "activate", "lah"]

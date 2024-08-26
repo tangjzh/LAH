@@ -22,7 +22,7 @@ import torch.distributed as dist
 from glob import glob
 from time import time
 from copy import deepcopy
-from einops import rearrange
+from einops import rearrange, repeat
 from models import get_models
 from datasets import get_dataset, get_sampler
 from models.clip import TextEmbedder

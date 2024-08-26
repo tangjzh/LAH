@@ -22,6 +22,7 @@ def mean_flat(tensor, mask=None):
     """
     tensor = torch.where(mask, tensor, 0.)
     non_zero = torch.count_nonzero(mask[:, :, 0, 0, 0], dim=-1)
+    # print(torch.mean(tensor, dim=list(range(len(tensor.shape)))[2:])[0], non_zero[0])
     return torch.sum(torch.mean(tensor, dim=list(range(len(tensor.shape)))[2:]), dim=-1) / non_zero
 
 
@@ -812,6 +813,18 @@ class GaussianDiffusion:
             # mask[:, 0] = False #TODO: delete this
             mask = repeat(mask, 'b f -> b f c h w', c=c, h=h, w=w)
             x_t = th.where(mask, x_t, x_start)
+
+            # import os, imageio
+            # import torchvision.transforms.functional as TF
+            # video_ = ((x_t[0] * 0.5 + 0.5) * 255).add_(0.5).clamp_(0, 255).to(dtype=torch.uint8).cpu().permute(0, 2, 3, 1).contiguous()
+            # resized_frames = []
+            # for frame in video_:
+            #     frame_resized = TF.resize(frame.permute(2, 0, 1), (256, 256))
+            #     frame_resized = frame_resized.permute(1, 2, 0) 
+            #     resized_frames.append(frame_resized)
+
+            # video_save_path = os.path.join('input' + '.mp4')
+            # imageio.mimwrite(video_save_path, resized_frames, fps=1, quality=9)
 
         terms = {}
 
